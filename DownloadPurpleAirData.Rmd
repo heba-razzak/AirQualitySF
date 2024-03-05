@@ -1,0 +1,268 @@
+---
+title: "DownloadPurpleAirData"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_knit$set(root.dir = "/Users/heba/Desktop/Uni/Lim Lab/Purple Air")
+```
+
+```{r}
+suppressPackageStartupMessages({
+  library(mapview) # For interactive maps
+  library(rjson) # For working with JSON data
+  library(httr) # For making HTTP requests
+  library(sf) # For working with spatial data
+  library(dplyr)
+  library(tidycensus) # For accessing US Census data
+  library(tidyverse) # For data manipulation and visualization
+  library(lubridate) # For working with dates
+  library(ggplot2) # For visualizing data
+  library(magick) # images/gifs
+})
+```
+
+```{r}
+# load getPurpleairApiHistoryV2 function from folder it's in 
+source("getPurpleairApiHistory/getPurpleairApiHistoryV2.R")
+```
+
+# Download purple air sensor id, lat, lon, date created, last seen
+```{r}
+crs = 4326
+# Store the URL of the API endpoint to request data from for PurpleAir air quality sensors
+all <- "https://api.purpleair.com/v1/sensors?fields=latitude%2C%20longitude%2C%20date_created%2C%20last_seen"
+
+# Define the API key used to authenticate the user's request to the PurpleAir API
+auth_key  <- "2C4E0A86-014A-11ED-8561-42010A800005"
+
+# Define the header for the HTTP request to the API, including the API key and Accept content type
+header = c(
+  'X-API-Key' = auth_key,
+  'Accept' = "application/json"
+)
+
+# Get Purple Air data using the following steps
+# Make the HTTP request to the PurpleAir API using the GET function from the httr library
+# Convert the raw content returned by the API into a character string
+# Convert the character string into a JSON object
+# Extract the "data" element from the JSON object and convert it to a data frame
+result <- GET(all, add_headers(header))
+raw <- rawToChar(result$content)
+json <- jsonlite::fromJSON(raw)
+pa <- as.data.frame(json$data)
+
+# Rename the columns of the PurpleAir data frame
+colnames(pa) <- c("sensor_id","date_created", "last_seen", "lat", "lon")
+
+# convert epoch timestamp to date
+pa$date_created <- as.Date(as.POSIXct(pa$date_created, origin = "1970-01-01"))
+pa$last_seen <- as.Date(as.POSIXct(pa$last_seen, origin = "1970-01-01"))
+
+# Convert the PurpleAir data frame to an sf object
+pa <- pa %>% na.omit() 
+dt <- st_as_sf(pa, coords=c("lon", "lat"), crs = crs)
+```
+
+# Get purple air sensors in san fran area (using bounding box)
+```{r}
+# greater san fran area
+
+# coordinates used for OSM
+# bbox <- c(left = -123.8, bottom = 36.9, right = -121.0, top = 39.0)
+
+bbox <- c(left = -124.0146, bottom = 36.5217, right = -120.9834, top = 39.13)
+
+x = list(rbind(c(bbox["left"],bbox["bottom"]),
+               c(bbox["left"],bbox["top"]),
+               c(bbox["right"],bbox["top"]),
+               c(bbox["right"],bbox["bottom"]),
+               c(bbox["left"],bbox["bottom"])))
+
+# Create a polygon for san fran area
+bbox_sf <- st_polygon(x)
+
+# convert to sf object
+bbox_sf <- st_sfc(bbox_sf, crs=crs)
+
+# intersection of purple air sensors and bounding box
+purpleairs_sf <- st_intersection(dt, bbox_sf)
+
+# interactive map
+mapview(purpleairs_sf)
+```
+## number of sensors
+```{r}
+length(unique(purpleairs_sf$sensor_id))
+```
+
+
+```{r}
+# Inputs for purple air function
+apiReadKey = "2C4E0A86-014A-11ED-8561-42010A800005"
+fields=c("pm2.5_atm, pm2.5_atm_a, pm2.5_atm_b")
+average="60"
+# # get sensor indexes for each month based on last seen and date created
+# sensorIndex <- unique(purpleairs_sf$sensor_id)
+```
+
+```{r}
+# Date range of historical purple air data
+start_date <- as.Date("2019-12-01")
+end_date <- as.Date("2019-12-31")
+current_date <- start_date
+```
+
+```{r}
+# Iterate over each 1 month period
+while (current_date <= end_date) {
+  
+  # Calculate next date
+  next_date <- current_date + months(1) - days(1)
+  
+  # Ensure we don't go beyond the end date
+  if (next_date > end_date) {
+    next_date <- end_date
+  }
+  
+  # Print the dates we're processing
+  print(paste("Processing:", current_date, "-", next_date))
+  start_time <- Sys.time()
+  
+  filtered_purpleairs_sf <- purpleairs_sf %>% filter(last_seen >= current_date) %>% filter(date_created <= next_date)
+  sensorIndex <- unique(filtered_purpleairs_sf$sensor_id)
+  
+  
+  # Get the data
+  purple_air <- getPurpleairApiHistoryV2(
+    sensorIndex=sensorIndex,
+    apiReadKey=apiReadKey,
+    startTimeStamp=format(current_date, "%Y-%m-%d %H:%M:%S"),
+    endTimeStamp=format(next_date, "%Y-%m-%d %H:%M:%S"),
+    average=average,
+    fields=fields
+  )
+  
+  # Save to CSV file
+  write.csv(purple_air, file = paste0("purple_air_sanfran_", current_date, "_", next_date, ".csv"), row.names = FALSE)
+  
+  # Print time it took
+  end_time <- Sys.time()
+  time_difference <- end_time - start_time
+  print(paste("Processing time:", current_date, "-", next_date))
+  print(time_difference)
+  
+  # Update the current date
+  current_date <- next_date + days(1)
+}
+```
+
+```{r}
+# Get a list of file paths
+output_directory = "/Users/heba/Desktop/Uni/Lim Lab/Purple Air"
+file_paths <- list.files(output_directory, pattern = "purple_air_sanfran_.*.csv", full.names = TRUE)
+
+dfs <- lapply(file_paths, read.csv)
+
+fulldata <- do.call(rbind, dfs)
+
+fulldata$month <- format(as.Date(fulldata$time_stamp), "%Y-%m")
+
+monthly_sensors <- fulldata %>% select(month, sensor_id) %>% distinct()
+```
+
+```{r}
+monthly_sensors_locations <- merge(purpleairs_sf, monthly_sensors, by = "sensor_id")
+```
+
+```{r}
+bbox <- c(left = -124.0146, bottom = 36.5217, right = -120.9834, top = 39.13)
+
+x = list(rbind(c(bbox["left"],bbox["bottom"]),
+               c(bbox["left"],bbox["top"]),
+               c(bbox["right"],bbox["top"]),
+               c(bbox["right"],bbox["bottom"]),
+               c(bbox["left"],bbox["bottom"])))
+
+# Create a polygon for san fran area
+bbox_sf <- st_polygon(x)
+
+# convert to sf object
+crs = 4326
+bbox_sf <- st_sfc(bbox_sf, crs=crs)
+```
+
+```{r}
+formatted_date <- format(as.Date("2018-01-01"), format = "%Y-%m")
+subset <- monthly_sensors_locations[monthly_sensors_locations$month == formatted_date, ]
+print(length(unique(subset$sensor_id)))
+mapview(subset,cex=1, layer.name = formatted_date, bbox = bbox) +mapview(bbox_sf, color = "black", fill = FALSE)
+```
+
+```{r}
+formatted_date <- format(as.Date("2019-12-01"), format = "%Y-%m")
+subset <- monthly_sensors_locations[monthly_sensors_locations$month == formatted_date, ]
+print(length(unique(subset$sensor_id)))
+mapview(subset,cex=1, layer.name = formatted_date, bbox = bbox)+mapview(bbox_sf, color = "black", fill = FALSE)
+```
+
+
+```{r}
+images <- list()
+
+dates <- seq(as.Date("2018-01-01"), as.Date("2019-12-01"), by = "1 month")
+bbox <- c(left = -124.0146, bottom = 36.5217, right = -120.9834, top = 39.13)
+
+for (date in dates) {
+  # Format the date for the image file name
+  formatted_date <- format(as.Date(date), format = "%Y-%m")
+  
+  # subset for each month
+  subset <- monthly_sensors_locations[monthly_sensors_locations$month == formatted_date, ]
+  
+  # Create a map using mapview
+  m <- mapview(subset, layer.name = formatted_date, bbox = bbox)
+  
+  # Save the map as an image
+  img_path <- paste0("map_", formatted_date, ".png")
+  mapshot(m, file = img_path)
+  
+  # Append the image to the list
+  images <- append(images, image_read(img_path))
+}
+
+# Create a GIF from the individual map images
+gif_path <- "sensor_data_over_time2.gif"
+image_write(images, gif_path, format = "gif")
+
+animation <- image_animate(images, fps = 4, optimize = TRUE)
+
+```
+
+```{r}
+
+
+
+```
+
+```{r}
+sensor_counts <- monthly_sensors %>%
+  group_by(month) %>%
+  summarise(sensor_count = n_distinct(sensor_id))
+
+ggplot(sensor_counts, aes(x = month, y = sensor_count)) +
+  geom_bar(stat = "identity", fill = "lavender", color = "black") +
+  labs(title = "Number of Sensors per Month",
+       x = "Month",
+       y = "Number of Sensors") +
+  scale_y_continuous(breaks = seq(0, max(sensor_counts$sensor_count) + 100, by = 100)) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+```{r}
+
+
+```

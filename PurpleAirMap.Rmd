@@ -1,0 +1,124 @@
+---
+title: "PurpleAirMap"
+output: html_document
+date: "2024-01-05"
+---
+# Load required libraries
+```{r}
+suppressPackageStartupMessages({
+  library(dplyr) # For data manipulation
+  library(rjson) # For working with JSON data
+  library(httr) # For making HTTP requests
+  library(sf) # For working with spatial data
+  library(mapview) # For interactive maps
+  library(osmdata) # Open Street Map
+  library(magick)
+})
+```
+
+### Coordinate reference system (CRS) that will be used for all shapefiles
+### CRS: 4326 in degrees (sphere)
+### CRS: 3857 in meters (flat map) - didnt work with getbb
+```{r}
+crs = 4326
+```
+
+# Download Purple Air
+```{r}
+# Store the URL of the API endpoint to request data from for PurpleAir air quality sensors
+all <- "https://api.purpleair.com/v1/sensors?fields=latitude%2C%20longitude%2C%20date_created%2C%20last_seen"
+
+# Define the API key used to authenticate the user's request to the PurpleAir API
+auth_key  <- "2C4E0A86-014A-11ED-8561-42010A800005"
+
+# Define the header for the HTTP request to the API, including the API key and Accept content type
+header = c(
+  'X-API-Key' = auth_key,
+  'Accept' = "application/json"
+)
+
+# Get Purple Air data using the following steps
+# Make the HTTP request to the PurpleAir API using the GET function from the httr library
+# Convert the raw content returned by the API into a character string
+# Convert the character string into a JSON object
+# Extract the "data" element from the JSON object and convert it to a data frame
+result <- GET(all, add_headers(header))
+raw <- rawToChar(result$content)
+json <- jsonlite::fromJSON(raw)
+pa <- as.data.frame(json$data)
+
+# Rename the columns of the PurpleAir data frame
+colnames(pa) <- c("sensor_id","date_created", "last_seen", "lat", "lon")
+
+# convert epoch timestamp to date
+pa$date_created <- as.Date(as.POSIXct(pa$date_created, origin = "1970-01-01"))
+```
+
+## Convert the PurpleAir data frame to an sf object
+```{r}
+pa <- pa %>% na.omit() 
+
+dt <- st_as_sf(pa, coords=c("lon", "lat"), crs = crs)
+```
+
+###########################################
+# Filter PurpleAir Data for San Francisco #
+###########################################
+```{r}
+# greater san fran area
+bbox <- c(left = -124.0146, bottom = 36.5217, right = -120.9834, top = 39.13)
+
+x = list(rbind(c(bbox["left"],bbox["bottom"]),
+               c(bbox["left"],bbox["top"]),
+               c(bbox["right"],bbox["top"]),
+               c(bbox["right"],bbox["bottom"]),
+               c(bbox["left"],bbox["bottom"])))
+
+# Create a polygon for san fran area
+bbox_sf <- st_polygon(x)
+
+# convert to sf object
+bbox_sf <- st_sfc(bbox_sf, crs=crs)
+
+# mapview(bbox_sf)
+
+purpleairs_sf <- st_intersection(dt, bbox_sf)
+mapview(purpleairs_sf)
+```
+
+```{r}
+# Sort the dataset by date in ascending order
+purpleairs_sf <- purpleairs_sf[order(purpleairs_sf$date_created), ]
+
+# Create a list to store the map images
+images <- list()
+```
+
+```{r}
+images <- list()
+
+dates <- seq(as.Date("2019-01-01"), as.Date("2024-01-01"), by = "1 month")
+
+
+for (date in dates) {
+  subset <- purpleairs_sf[purpleairs_sf$date_created <= date, ]
+  
+  # Format the date for the image file name
+  formatted_date <- format(as.Date(date), format = "%Y-%m")
+  
+  # Create a map using mapview
+  m <- mapview(subset, layer.name = formatted_date)
+  
+  # Save the map as an image
+  img_path <- paste0("map_", formatted_date, ".png")
+  mapshot(m, file = img_path)
+  
+  # Append the image to the list
+  images <- append(images, image_read(img_path))
+}
+
+# Create a GIF from the individual map images
+gif_path <- "sensor_data_over_time.gif"
+image_write(images, gif_path, format = "gif")
+
+```
