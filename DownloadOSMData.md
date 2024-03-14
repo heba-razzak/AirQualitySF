@@ -2,14 +2,12 @@ Download OSM data
 ================
 
 ``` r
-suppressPackageStartupMessages({
-  library(dplyr) # For data manipulation
-  library(sf) # For working with spatial data
-  library(mapview) # For interactive maps
-  library(osmdata) # Open Street Map
-  library(data.table)
-  library(ggplot2)
-})
+library(dplyr) # For data manipulation
+library(sf) # For working with spatial data
+library(mapview) # For interactive maps
+library(osmdata) # Open Street Map
+library(data.table)
+library(ggplot2)
 ```
 
 ## Bounding box of San Francisco and surrounding areas
@@ -18,7 +16,7 @@ suppressPackageStartupMessages({
 # Greater san fran area
 bbox <- c(xmin = -123.8, ymin = 36.9, xmax = -121.0, ymax = 39.0)
 
-# Shapefile
+# Shapefile of bounding box
 bbox_sf <- st_as_sfc(st_bbox(bbox))
 
 # Set CRS (coordinate reference system)
@@ -29,7 +27,7 @@ st_crs(bbox_sf) <- crs
 mapview(bbox_sf)
 ```
 
-![](DownloadOSMData-copy_files/figure-gfm/san-fran-bounding-box-1.png)<!-- -->
+![](DownloadOSMData_files/figure-gfm/san-fran-bounding-box-1.png)<!-- -->
 
 # Split map into smaller areas
 
@@ -46,7 +44,7 @@ mapview(grid_sf)
     ## Warning in cbind(`Feature ID` = fid, mat): number of rows of result is not a
     ## multiple of vector length (arg 1)
 
-![](DownloadOSMData-copy_files/figure-gfm/create-grid-1.png)<!-- -->
+![](DownloadOSMData_files/figure-gfm/create-grid-1.png)<!-- -->
 
 # Download roads for each grid cell
 
@@ -256,7 +254,7 @@ sanfrangrid_trees <- st_read("sanfrangrid_trees_osm.gpkg", quiet = TRUE)
 ggplot(sanfrangrid_roads) + geom_sf()
 ```
 
-![](DownloadOSMData-copy_files/figure-gfm/plot-roads-1.png)<!-- -->
+![](DownloadOSMData_files/figure-gfm/plot-roads-1.png)<!-- -->
 
 ## Plot buildings
 
@@ -264,7 +262,7 @@ ggplot(sanfrangrid_roads) + geom_sf()
 ggplot(sanfrangrid_buildings) + geom_sf()
 ```
 
-![](DownloadOSMData-copy_files/figure-gfm/plot-buildings-1.png)<!-- -->
+![](DownloadOSMData_files/figure-gfm/plot-buildings-1.png)<!-- -->
 
 ## Plot trees
 
@@ -272,7 +270,7 @@ ggplot(sanfrangrid_buildings) + geom_sf()
 ggplot(sanfrangrid_trees) + geom_sf()
 ```
 
-![](DownloadOSMData-copy_files/figure-gfm/plot-trees-1.png)<!-- -->
+![](DownloadOSMData_files/figure-gfm/plot-trees-1.png)<!-- -->
 
 # Read roads, buildings, trees for San Fran city (cell 238)
 
@@ -306,7 +304,7 @@ sanfrancell_trees <- st_intersection(sanfrancell_trees, bbox_polygon)
 mapview(sanfrancell_roads, layer.name = "Roads",  zcol = "highway")
 ```
 
-![](DownloadOSMData-copy_files/figure-gfm/mapview-roads-1.png)<!-- -->
+![](DownloadOSMData_files/figure-gfm/mapview-roads-1.png)<!-- -->
 
 ## Map of San Fran buildings
 
@@ -315,7 +313,7 @@ simplified_buildings <- st_simplify(sanfrancell_buildings, dTolerance = 0.001)
 mapview(simplified_buildings, map.types="CartoDB.Positron", layer.name = "Buildings", zcol = "building")
 ```
 
-![](DownloadOSMData-copy_files/figure-gfm/mapview-buildings-1.png)<!-- -->
+![](DownloadOSMData_files/figure-gfm/mapview-buildings-1.png)<!-- -->
 
 ## Map of San Fran trees
 
@@ -323,4 +321,4 @@ mapview(simplified_buildings, map.types="CartoDB.Positron", layer.name = "Buildi
 mapview(sanfrancell_trees, col.regions = "green", legend = FALSE, layer.name = "Trees")
 ```
 
-![](DownloadOSMData-copy_files/figure-gfm/mapview-trees-1.png)<!-- -->
+![](DownloadOSMData_files/figure-gfm/mapview-trees-1.png)<!-- -->

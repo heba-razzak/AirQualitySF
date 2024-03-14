@@ -8,15 +8,13 @@ output: github_document
 knitr::opts_knit$set(root.dir = '/Users/heba/Desktop/Uni/Lim Lab/OSM')
 ```
 
-```{r}
-suppressPackageStartupMessages({
-  library(dplyr) # For data manipulation
-  library(sf) # For working with spatial data
-  library(mapview) # For interactive maps
-  library(osmdata) # Open Street Map
-  library(data.table)
-  library(ggplot2)
-})
+```{r, load-libraries, message = FALSE, warning = FALSE}
+library(dplyr) # For data manipulation
+library(sf) # For working with spatial data
+library(mapview) # For interactive maps
+library(osmdata) # Open Street Map
+library(data.table)
+library(ggplot2)
 ```
 
 ## Bounding box of San Francisco and surrounding areas
@@ -24,7 +22,7 @@ suppressPackageStartupMessages({
 # Greater san fran area
 bbox <- c(xmin = -123.8, ymin = 36.9, xmax = -121.0, ymax = 39.0)
 
-# Shapefile
+# Shapefile of bounding box
 bbox_sf <- st_as_sfc(st_bbox(bbox))
 
 # Set CRS (coordinate reference system)
