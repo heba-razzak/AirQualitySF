@@ -5,6 +5,13 @@ output:
     df_print: paged
 ---
 
+```{r, setup, include=FALSE}
+# Set working directory
+knitr::opts_knit$set(root.dir = '/Users/heba/Desktop/Uni/Lim Lab/OSM')
+# Directory for images used
+knitr::include_graphics('/Users/heba/Documents/GitHub/lim-lab')
+```
+
 ```{r}
 suppressPackageStartupMessages({
   library(dplyr) # For data manipulation
@@ -16,34 +23,24 @@ suppressPackageStartupMessages({
 })
 ```
 
-```{r, setup, include=FALSE}
-knitr::opts_knit$set(root.dir = '/Users/heba/Desktop/Uni/Lim Lab/OSM')
-```
-
 ## Bounding box of San Francisco and surrounding areas
-```{r san-fran-bounding-box}
-# greater san fran area
-bbox <- c(left = -123.8, bottom = 36.9, right = -121.0, top = 39.0)
+```{r, san-fran-bounding-box}
+# Greater san fran area
+bbox <- c(xmin = -123.8, ymin = 36.9, xmax = -121.0, ymax = 39.0)
 
-x = list(rbind(c(bbox["left"],bbox["bottom"]),
-               c(bbox["left"],bbox["top"]),
-               c(bbox["right"],bbox["top"]),
-               c(bbox["right"],bbox["bottom"]),
-               c(bbox["left"],bbox["bottom"])))
+# Shapefile
+bbox_sf <- st_as_sfc(st_bbox(bbox))
 
-# Create a polygon for san fran area
-bbox_sf <- st_polygon(x)
-
-# convert to sf object
+# Set CRS (coordinate reference system)
 crs = 4326
-bbox_sf <- st_sfc(bbox_sf, crs=crs)
+st_crs(bbox_sf) <- crs
 
 # view map
 mapview(bbox_sf)
 ```
 
 # Split map into smaller areas
-```{r create-grid}
+```{r, create-grid}
 # make polygon into grid with cell size 0.1 x 0.1
 grid <- st_make_grid(bbox_sf, cellsize = c(0.1,0.1))
 
@@ -54,7 +51,7 @@ mapview(grid_sf)
 ```
 
 # Download roads for each grid cell
-```{r download-road-grid, eval=FALSE}
+```{r, download-road-grid, eval=FALSE}
 # Loop through each location to get the bounding box and OSM data
 for (i in 1:length(grid)) {
   print(i)
@@ -103,7 +100,7 @@ for (i in 1:length(grid)) {
 ```
 
 ## Read each grid roads and save to one file
-```{r save-road-grid-to-one-file, eval=FALSE}
+```{r, save-road-grid-to-one-file, eval=FALSE}
 # Get a list of file paths
 file_paths <- list.files(pattern = "^grid.*_roads_osm\\.shp$", full.names = TRUE)
 
@@ -121,7 +118,7 @@ st_write(merged_sf, "sanfrangrid_roads_osm.shp", driver = "GPKG", append=FALSE)
 ```
 
 # Download buildings for each grid cell
-```{r download-building-grid, eval=FALSE}
+```{r, download-building-grid, eval=FALSE}
 # Loop through each location to get the bounding box and OSM data
 for (i in 1:length(grid)) {
   print(i)
@@ -167,7 +164,7 @@ for (i in 1:length(grid)) {
 ```
 
 ## Read smaller building grid areas and save to one file
-```{r save-building-grid-to-one-file, eval=FALSE}
+```{r, save-building-grid-to-one-file, eval=FALSE}
 # Get a list of file paths
 file_paths <- list.files(pattern = "^grid.*_buildings_osm\\.gpkg$", full.names = TRUE)
 
@@ -185,7 +182,7 @@ st_write(merged_sf, "sanfrangrid_buildings_osm.gpkg", driver = "GPKG", append=FA
 ```
 
 # Download trees for each grid cell
-```{r download-trees-grid, eval=FALSE}
+```{r, download-trees-grid, eval=FALSE}
 # Loop through each location to get the bounding box and OSM data
 for (i in 1:length(grid)) {
   print(i)
@@ -222,7 +219,7 @@ for (i in 1:length(grid)) {
 ```
 
 ## Read smaller trees grid areas and save to one file
-```{r save-trees-grid-to-one-file, eval=FALSE}
+```{r, save-trees-grid-to-one-file, eval=FALSE}
 # Get a list of file paths
 file_paths <- list.files(pattern = "^grid.*_trees_osm\\.gpkg$", full.names = TRUE)
 
@@ -237,7 +234,7 @@ st_write(merged_sf, "sanfrangrid_trees_osm.gpkg", driver = "GPKG", append=FALSE)
 ```
 
 ## Read merged osm files
-```{r read-buildings-roads-trees, message=FALSE, warning=FALSE}
+```{r, read-buildings-roads-trees, message=FALSE, warning=FALSE, eval=FALSE}
 # read roads file
 sanfrangrid_roads <- st_read("sanfrangrid_roads_osm.shp", quiet = TRUE)
 
@@ -249,21 +246,35 @@ sanfrangrid_trees <- st_read("sanfrangrid_trees_osm.gpkg", quiet = TRUE)
 ```
 
 ## Plot roads
-```{r, plot-roads}
-ggplot(sanfrangrid_roads) + geom_sf()
+```{r, plot-roads, eval=FALSE}
+roads_plot <- ggplot(sanfrangrid_roads) + geom_sf()
+ggsave("roads_plot.png", plot = roads_plot)
 ```
+
+![](roads_plot.png)
 
 ## Plot buildings
-```{r, plot-buildings}
-ggplot(sanfrangrid_buildings) + geom_sf()
+```{r, plot-buildings, eval=FALSE}
+buildings_plot <- ggplot(sanfrangrid_buildings) + geom_sf()
+ggsave("buildings_plot.png", plot = buildings_plot)
 ```
+
+![](buildings_plot.png)
 
 ## Plot trees
-```{r, plot-trees}
-ggplot(sanfrangrid_trees) + geom_sf()
+```{r, plot-trees, eval=FALSE}
+trees_plot <- ggplot(sanfrangrid_trees) + geom_sf()
+ggsave("trees_plot.png", plot = trees_plot)
 ```
 
-# Read roads and buildings for cell 238
+![](trees_plot.png)
+
+```{r, free-up-space, include=FALSE}
+# remove objects from environment
+rm(list = ls())
+```
+
+# Read roads, buildings, trees for San Fran city (cell 238)
 ```{r read-cell-238-files, message=FALSE, warning=FALSE}
 # read roads file
 sanfrancell_roads <- st_read("grid238_roads_osm.shp", quiet = TRUE)
@@ -275,17 +286,30 @@ sanfrancell_buildings <- st_read("grid238_buildings_osm.gpkg", quiet = TRUE)
 sanfrancell_trees <- st_read("grid238_trees_osm.gpkg", quiet = TRUE)
 ```
 
+## Select small area of San Francisco to map
+```{r, mapview-smaller-area, message=FALSE, warning=FALSE}
+crs = 4326
+bbox <- c(xmin = -122.47, ymin = 37.76, xmax = -122.44, ymax = 37.74)
+bbox_polygon <- st_as_sfc(st_bbox(bbox))
+st_crs(bbox_polygon) <- crs
+st_crs(sanfrancell_buildings) <- crs
+sanfrancell_roads <- st_intersection(sanfrancell_roads, bbox_polygon)
+sanfrancell_buildings <- st_intersection(sanfrancell_buildings, bbox_polygon)
+sanfrancell_trees <- st_intersection(sanfrancell_trees, bbox_polygon)
+```
+
 ## Map of San Fran roads
-```{r mapview-roads}
+```{r, mapview-roads}
 mapview(sanfrancell_roads, layer.name = "Roads",  zcol = "highway")
 ```
 
 ## Map of San Fran buildings
-```{r mapview-buildings}
-mapview(sanfrancell_buildings, layer.name = "Buildings", zcol = "building")
+```{r, mapview-buildings}
+simplified_buildings <- st_simplify(sanfrancell_buildings, dTolerance = 0.001)
+mapview(simplified_buildings, layer.name = "Buildings", zcol = "building")
 ```
 
 ## Map of San Fran trees
-```{r mapview-trees}
+```{r, mapview-trees}
 mapview(sanfrancell_trees, col.regions = "green", legend = FALSE, layer.name = "Trees")
 ```
