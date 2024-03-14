@@ -253,29 +253,26 @@ sanfrangrid_trees <- st_read("sanfrangrid_trees_osm.gpkg", quiet = TRUE)
 ## Plot roads
 
 ``` r
-roads_plot <- ggplot(sanfrangrid_roads) + geom_sf()
-ggsave("roads_plot.png", plot = roads_plot)
+ggplot(sanfrangrid_roads) + geom_sf()
 ```
 
-![](roads_plot.png)
+![](DownloadOSMData-copy_files/figure-gfm/plot-roads-1.png)<!-- -->
 
 ## Plot buildings
 
 ``` r
-buildings_plot <- ggplot(sanfrangrid_buildings) + geom_sf()
-ggsave("buildings_plot.png", plot = buildings_plot)
+ggplot(sanfrangrid_buildings) + geom_sf()
 ```
 
-![](buildings_plot.png)
+![](DownloadOSMData-copy_files/figure-gfm/plot-buildings-1.png)<!-- -->
 
 ## Plot trees
 
 ``` r
-trees_plot <- ggplot(sanfrangrid_trees) + geom_sf()
-ggsave("trees_plot.png", plot = trees_plot)
+ggplot(sanfrangrid_trees) + geom_sf()
 ```
 
-![](trees_plot.png)
+![](DownloadOSMData-copy_files/figure-gfm/plot-trees-1.png)<!-- -->
 
 # Read roads, buildings, trees for San Fran city (cell 238)
 
@@ -315,7 +312,7 @@ mapview(sanfrancell_roads, layer.name = "Roads",  zcol = "highway")
 
 ``` r
 simplified_buildings <- st_simplify(sanfrancell_buildings, dTolerance = 0.001)
-mapview(simplified_buildings, layer.name = "Buildings", zcol = "building")
+mapview(simplified_buildings, map.types="CartoDB.Positron", layer.name = "Buildings", zcol = "building")
 ```
 
 ![](DownloadOSMData-copy_files/figure-gfm/mapview-buildings-1.png)<!-- -->
