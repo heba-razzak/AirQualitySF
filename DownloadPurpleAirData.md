@@ -1,36 +1,29 @@
----
-title: "DownloadPurpleAirData"
-output: github_document
----
+DownloadPurpleAirData
+================
 
-```{r setup, include=FALSE}
-auth_key <- "2C4E0A86-014A-11ED-8561-42010A800005"
-file_directory = "/Users/heba/Desktop/Uni/Lim Lab/Purple Air"
-knitr::opts_knit$set(root.dir = file_directory)
+``` r
+suppressPackageStartupMessages({
+  library(mapview) # For interactive maps
+  library(rjson) # For working with JSON data
+  library(httr) # For making HTTP requests
+  library(sf) # For working with spatial data
+  library(dplyr)
+  library(tidycensus) # For accessing US Census data
+  library(tidyverse) # For data manipulation and visualization
+  library(lubridate) # For working with dates
+  library(ggplot2) # For visualizing data
+  library(magick) # images/gifs
+})
 ```
 
-```{r, load-libraries, message = FALSE, warning = FALSE}
-library(dplyr) # For data manipulation
-library(sf) # For working with spatial data
-library(mapview) # For interactive maps
-library(ggplot2) # For visualizing data
-library(rjson) # For working with JSON data
-library(httr) # For making HTTP requests
-library(lubridate) # For working with dates
-
-# install package from github
-library(devtools)
-install_github("heba-razzak/lim-lab/getPurpleairApiHistoryV2")
-library(getPurpleairApiHistoryV2)
-```
-
-```{r}
+``` r
 # load getPurpleairApiHistoryV2 function from folder it's in 
 source("getPurpleairApiHistory/getPurpleairApiHistoryV2.R")
 ```
 
 # Download purple air sensor id, lat, lon, date created, last seen
-```{r, download-purpleair-sensors}
+
+``` r
 # Store the URL of the API endpoint to request data from for PurpleAir air quality sensors
 all <- "https://api.purpleair.com/v1/sensors?fields=latitude%2C%20longitude%2C%20date_created%2C%20last_seen"
 
@@ -69,8 +62,22 @@ dt <- st_as_sf(pa, coords=c("lon", "lat"), crs = crs)
 head(dt)
 ```
 
+    ## Simple feature collection with 6 features and 3 fields
+    ## Geometry type: POINT
+    ## Dimension:     XY
+    ## Bounding box:  xmin: -124.1288 ymin: 39.43402 xmax: -104.7324 ymax: 49.16008
+    ## Geodetic CRS:  WGS 84
+    ##   sensor_id date_created  last_seen                   geometry
+    ## 1        53   2016-02-04 2024-03-18 POINT (-111.7048 40.24674)
+    ## 2        77   2016-03-02 2024-03-18 POINT (-111.8253 40.75082)
+    ## 3        81   2016-06-11 2024-03-18 POINT (-111.6424 40.28764)
+    ## 4       182   2016-08-01 2024-03-18 POINT (-123.7423 49.16008)
+    ## 5       195   2016-08-01 2024-03-18    POINT (-124.1288 41.06)
+    ## 6       314   2016-09-15 2024-03-18 POINT (-104.7324 39.43402)
+
 # Get purple air sensors in san fran area (using bounding box)
-```{r, san-fran-bounding-box, warning = FALSE}
+
+``` r
 # Greater san fran area
 bbox <- c(xmin = -123.8, ymin = 36.9, xmax = -121.0, ymax = 39.0)
 
@@ -88,26 +95,31 @@ purpleairs_sf <- st_intersection(dt, bbox_sf)
 mapview(purpleairs_sf)
 ```
 
+![](DownloadPurpleAirData_files/figure-gfm/san-fran-bounding-box-1.png)<!-- -->
+
 ## number of sensors
-```{r, number-of-sensors}
+
+``` r
 cat("Total number of sensors: ", length(unique(purpleairs_sf$sensor_id)))
 ```
 
-```{r, inputs-purple-air}
+    ## Total number of sensors:  7485
+
+``` r
 # Inputs for purple air function
 apiReadKey <- auth_key
 fields <- c("pm2.5_atm, pm2.5_atm_a, pm2.5_atm_b")
 average <- "60"
 ```
 
-```{r, date-range}
+``` r
 # Date range of historical purple air data
 start_date <- as.Date("2018-01-01")
 end_date <- as.Date("2019-12-31")
 current_date <- start_date
 ```
 
-```{r, download-data, eval=FALSE}
+``` r
 # Iterate over each 1 month period
 while (current_date <= end_date) {
   
@@ -150,7 +162,7 @@ while (current_date <= end_date) {
 }
 ```
 
-```{r, bind-purpleair-files}
+``` r
 # Get a list of file paths
 file_paths <- list.files(file_directory, pattern = "purple_air_sanfran_.*.csv", full.names = TRUE)
 
@@ -168,7 +180,15 @@ monthly_sensors <- fulldata %>% select(month, sensor_id) %>% distinct()
 head(monthly_sensors)
 ```
 
-```{r, count-purpleair-monthly}
+    ##     month sensor_id
+    ## 1 2017-01       767
+    ## 2 2018-01       767
+    ## 3 2018-01      1742
+    ## 4 2018-01      1860
+    ## 5 2018-01      1874
+    ## 6 2018-01      2031
+
+``` r
 sensor_counts <- monthly_sensors %>%
   group_by(month) %>%
   summarise(sensor_count = n_distinct(sensor_id))
@@ -182,3 +202,5 @@ ggplot(sensor_counts, aes(x = month, y = sensor_count)) +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 ```
+
+![](DownloadPurpleAirData_files/figure-gfm/count-purpleair-monthly-1.png)<!-- -->
