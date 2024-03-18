@@ -20,28 +20,5 @@ It is designed to simplify the process of creating input for
 variables in a dataset.
 }
 \examples{
->print_descriptions_df(mtcars)
-
-descriptions = data.frame(Variable = c('mpg',
-'cyl',
-'disp',
-'hp',
-'drat',
-'wt',
-'qsec',
-'vs',
-'am',
-'gear',
-'carb'),
-Description = c('mpg_description',
-                'cyl_description',
-                'disp_description',
-                'hp_description',
-                'drat_description',
-                'wt_description',
-                'qsec_description',
-                'vs_description',
-                'am_description',
-                'gear_description',
-                'carb_description'))
+print_descriptions_df(mtcars)
 }
