@@ -9,8 +9,8 @@ library(sf) # For working with spatial data
 library(data.table)
 
 # install package from github
-library(devtools)
-install_github("heba-razzak/lim-lab/createDataDict")
+# library(devtools)
+# install_github("heba-razzak/lim-lab/createDataDict")
 library(createDataDict)
 
 # install package from local files

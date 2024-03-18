@@ -26,7 +26,7 @@ print_descriptions_df <- function(data) {
   # Construct Output Text
   txt1 <- "descriptions = data.frame(Variable = c("
   txt2 <- "),\n                          Description = c("
-  txt3 <- "))"
+  txt3 <- "))\n\n"
 
   txt <- paste0(txt1, variables_txt, txt2, desc_txt, txt3)
 
@@ -118,7 +118,7 @@ print_data_dict <- function(data, title = "", descriptions = NULL) {
   txt <- paste0(txt, "**Number of Rows**: `", num_rows, "`\n\n")
 
   # Markdown table
-  txt <- paste0(txt, md_dict, "\n")
+  txt <- paste0(txt, md_dict, "\n\n")
 
   # Print the output
   cat(txt)
