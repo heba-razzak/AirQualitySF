@@ -54,10 +54,13 @@ print_descriptions_df <- function(data) {
 #' print_data_dict(mtcars, title = "Cars", descriptions = descriptions)
 print_data_dict <- function(data, title = "", descriptions = NULL) {
   # Load packages
-  if (!require("dplyr")) {
-    install.packages("dplyr")
-    library(dplyr)
-  }
+  suppressPackageStartupMessages({
+    # Check if dplyr is installed, if not, install and load it
+    if (!requireNamespace("dplyr", quietly = TRUE)) {
+      install.packages("dplyr")
+      library(dplyr)
+    }
+  })
   ##################
   # Get Table Data #
   ##################

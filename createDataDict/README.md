@@ -8,7 +8,7 @@ data frame.
 You can install the development version of createDataDict from
 [GitHub](https://github.com/) with:
 
-```         
+``` r
 # install.packages("devtools")
 devtools::install_github("heba-razzak/lim-lab/createDataDict")
 library(createDataDict)
@@ -16,31 +16,32 @@ library(createDataDict)
 
 ## Example
 
-```         
+``` r
 print_descriptions_df(mtcars)
 ```
-descriptions = data.frame(Variable = c('mpg',  
-                                       'cyl',  
-                                       'disp',  
-                                       'hp',  
-                                       'drat',  
-                                       'wt',  
-                                       'qsec',  
-                                       'vs',  
-                                       'am',  
-                                       'gear',  
-                                       'carb'),  
-                          Description = c('mpg_description',  
-                                         'cyl_description',  
-                                         'disp_description',  
-                                         'hp_description',  
-                                         'drat_description',  
-                                         'wt_description',  
-                                         'qsec_description',  
-                                         'vs_description',  
-                                         'am_description',  
-                                         'gear_description',  
-                                         'carb_description'))  
+
+    ## descriptions = data.frame(Variable = c('mpg',
+    ##                                        'cyl',
+    ##                                        'disp',
+    ##                                        'hp',
+    ##                                        'drat',
+    ##                                        'wt',
+    ##                                        'qsec',
+    ##                                        'vs',
+    ##                                        'am',
+    ##                                        'gear',
+    ##                                        'carb'),
+    ##                           Description = c('mpg_description',
+    ##                                          'cyl_description',
+    ##                                          'disp_description',
+    ##                                          'hp_description',
+    ##                                          'drat_description',
+    ##                                          'wt_description',
+    ##                                          'qsec_description',
+    ##                                          'vs_description',
+    ##                                          'am_description',
+    ##                                          'gear_description',
+    ##                                          'carb_description'))
 
 ``` r
 # using output from previous function, create descriptions data frame
@@ -69,19 +70,19 @@ descriptions = data.frame(Variable = c('mpg',
 print_data_dict(mtcars, title = "Cars", descriptions = descriptions)
 ```
 
-## **Cars**  
-**Number of Rows**: `32`
-
-|     |Variable |Type    | NA| %NA| Unique|Description |
-|:----|:--------|:-------|--:|---:|------:|:-----------|
-|mpg  |mpg      |numeric |  0|   0|     25|            |
-|cyl  |cyl      |numeric |  0|   0|      3|            |
-|disp |disp     |numeric |  0|   0|     27|            |
-|hp   |hp       |numeric |  0|   0|     22|            |
-|drat |drat     |numeric |  0|   0|     22|            |
-|wt   |wt       |numeric |  0|   0|     29|            |
-|qsec |qsec     |numeric |  0|   0|     30|            |
-|vs   |vs       |numeric |  0|   0|      2|            |
-|am   |am       |numeric |  0|   0|      2|            |
-|gear |gear     |numeric |  0|   0|      3|            |
-|carb |carb     |numeric |  0|   0|      6|            |
+    ## ## **Cars**  
+    ## **Number of Rows**: `32`
+    ## 
+    ## |Variable |Type    | NA| %NA| Unique|Description      |
+    ## |:--------|:-------|--:|---:|------:|:----------------|
+    ## |mpg      |numeric |  0|   0|     25|mpg_description  |
+    ## |cyl      |numeric |  0|   0|      3|cyl_description  |
+    ## |disp     |numeric |  0|   0|     27|disp_description |
+    ## |hp       |numeric |  0|   0|     22|hp_description   |
+    ## |drat     |numeric |  0|   0|     22|drat_description |
+    ## |wt       |numeric |  0|   0|     29|wt_description   |
+    ## |qsec     |numeric |  0|   0|     30|qsec_description |
+    ## |vs       |numeric |  0|   0|      2|vs_description   |
+    ## |am       |numeric |  0|   0|      2|am_description   |
+    ## |gear     |numeric |  0|   0|      3|gear_description |
+    ## |carb     |numeric |  0|   0|      6|carb_description |
