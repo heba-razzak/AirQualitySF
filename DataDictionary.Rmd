@@ -38,7 +38,7 @@ descriptions = data.frame(Variable = c('osm_id',
                                          'maxspeed_description',
                                          'geom_description'))
 
-# print_data_dict(sanfrancell_roads, title="OSM Roads", descriptions=descriptions)
+print_data_dict(sanfrancell_roads, title="OSM Roads", descriptions=descriptions)
 ```
 
 ## **OSM Roads**

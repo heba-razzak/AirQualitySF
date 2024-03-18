@@ -1,14 +1,4 @@
----
-editor_options: 
-  markdown: 
-    wrap: 72
----
-
-# createDataDict
-
-<!-- badges: start -->
-
-<!-- badges: end -->
+# createDataDict R package
 
 The goal of createDataDict is to easily create a data dictionary for any
 data frame.
@@ -29,28 +19,28 @@ library(createDataDict)
 ```         
 print_descriptions_df(mtcars)
 ```
-descriptions = data.frame(Variable = c('mpg',
-                                       'cyl',
-                                       'disp',
-                                       'hp',
-                                       'drat',
-                                       'wt',
-                                       'qsec',
-                                       'vs',
-                                       'am',
-                                       'gear',
-                                       'carb'),
-                          Description = c('mpg_description',
-                                         'cyl_description',
-                                         'disp_description',
-                                         'hp_description',
-                                         'drat_description',
-                                         'wt_description',
-                                         'qsec_description',
-                                         'vs_description',
-                                         'am_description',
-                                         'gear_description',
-                                         'carb_description'))
+descriptions = data.frame(Variable = c('mpg',  
+                                       'cyl',  
+                                       'disp',  
+                                       'hp',  
+                                       'drat',  
+                                       'wt',  
+                                       'qsec',  
+                                       'vs',  
+                                       'am',  
+                                       'gear',  
+                                       'carb'),  
+                          Description = c('mpg_description',  
+                                         'cyl_description',  
+                                         'disp_description',  
+                                         'hp_description',  
+                                         'drat_description',  
+                                         'wt_description',  
+                                         'qsec_description',  
+                                         'vs_description',  
+                                         'am_description',  
+                                         'gear_description',  
+                                         'carb_description'))  
 
 ``` r
 # using output from previous function, create descriptions data frame
