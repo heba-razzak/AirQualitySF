@@ -30,7 +30,7 @@ descriptions = data.frame(Variable = c('osm_id',
                                        'highway',
                                        'lanes',
                                        'maxspeed',
-                                       'geom'), 
+                                       'geom'),
                           Description = c('osm_id_description',
                                          'name_description',
                                          'highway_description',
@@ -38,7 +38,7 @@ descriptions = data.frame(Variable = c('osm_id',
                                          'maxspeed_description',
                                          'geom_description'))
 
-print_data_dict(sanfrancell_roads, title="OSM Roads", descriptions=descriptions)
+print_data_dict(sanfrancell_roads, title="OSM Roads", descriptions=NULL)
 ```
 
 ## **OSM Roads**
@@ -46,7 +46,7 @@ print_data_dict(sanfrancell_roads, title="OSM Roads", descriptions=descriptions)
 **Number of Rows**: `33701`
 
 | Variable | Type           |    NA |  %NA | Unique | Description                            |
-|:----------|:----------|----------:|----------:|----------:|:----------------|
+|:-----------|:-----------|-----------:|-----------:|-----------:|:-----------|
 | osm_id   | character      |     0 |  0.0 |  33701 | Unique identifier for the road segment |
 | name     | character      | 22500 | 66.8 |   2190 | Name of the road                       |
 | highway  | character      |    22 |  0.1 |     25 |                                        |
