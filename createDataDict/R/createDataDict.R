@@ -55,8 +55,7 @@ print_descriptions_df <- function(data) {
 print_data_dict <- function(data, title = "", descriptions = NULL) {
   # Load packages
   suppressPackageStartupMessages({
-    # Check if dplyr is installed, if not, install and load it
-    if (!requireNamespace("dplyr", quietly = TRUE)) {
+    if (!require("dplyr")) {
       install.packages("dplyr")
       library(dplyr)
     }
