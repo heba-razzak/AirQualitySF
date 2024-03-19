@@ -26,7 +26,7 @@ library(getPurpleairApiHistoryV2)
 
 ```{r}
 # load getPurpleairApiHistoryV2 function from folder it's in 
-source("getPurpleairApiHistory/getPurpleairApiHistoryV2.R")
+# source("getPurpleairApiHistory/getPurpleairApiHistoryV2.R")
 ```
 
 # Download purple air sensor id, lat, lon, date created, last seen
