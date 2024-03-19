@@ -9,12 +9,9 @@ library(sf) # For working with spatial data
 library(data.table)
 
 # install package from github
-# library(devtools)
-# install_github("heba-razzak/lim-lab/createDataDict")
+library(devtools)
+install_github("heba-razzak/createDataDict")
 library(createDataDict)
-
-# install package from local files
-# source("createDataDict/createDataDict.R") # print_descriptions_df & print_data_dict functions
 ```
 
 ```{r, osm-roads, message=FALSE, warning=FALSE}
