@@ -2,63 +2,29 @@ DownloadPurpleAirData
 ================
 
 ``` r
-suppressPackageStartupMessages({
-  library(mapview) # For interactive maps
-  library(rjson) # For working with JSON data
-  library(httr) # For making HTTP requests
-  library(sf) # For working with spatial data
-  library(dplyr)
-  library(tidycensus) # For accessing US Census data
-  library(tidyverse) # For data manipulation and visualization
-  library(lubridate) # For working with dates
-  library(ggplot2) # For visualizing data
-  library(magick) # images/gifs
-})
-```
+library(dplyr) # For data manipulation
+library(sf) # For working with spatial data
+library(mapview) # For interactive maps
+library(ggplot2) # For visualizing data
+library(lubridate) # For working with dates
 
-``` r
-# load getPurpleairApiHistoryV2 function from folder it's in 
-source("getPurpleairApiHistory/getPurpleairApiHistoryV2.R")
+# install package from github
+library(devtools)
+suppressMessages({devtools::install_github("heba-razzak/getPurpleairApiHistoryV2")})
+library(getPurpleairApiHistoryV2)
 ```
 
 # Download purple air sensor id, lat, lon, date created, last seen
 
 ``` r
-# Store the URL of the API endpoint to request data from for PurpleAir air quality sensors
-all <- "https://api.purpleair.com/v1/sensors?fields=latitude%2C%20longitude%2C%20date_created%2C%20last_seen"
-
-# Define the API key used to authenticate the user's request to the PurpleAir API
-# auth_key  <- "XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX"
-
-# Define the header for the HTTP request to the API, including the API key and Accept content type
-header = c(
-  'X-API-Key' = auth_key,
-  'Accept' = "application/json"
-)
-
-# Get Purple Air data using the following steps
-# Make the HTTP request to the PurpleAir API using the GET function from the httr library
-# Convert the raw content returned by the API into a character string
-# Convert the character string into a JSON object
-# Extract the "data" element from the JSON object and convert it to a data frame
-result <- GET(all, add_headers(header))
-raw <- rawToChar(result$content)
-json <- jsonlite::fromJSON(raw)
-pa <- as.data.frame(json$data)
-
-# Rename the columns of the PurpleAir data frame
-colnames(pa) <- c("sensor_id","date_created", "last_seen", "lat", "lon")
-
-# convert epoch timestamp to date
-pa$date_created <- as.Date(as.POSIXct(pa$date_created, origin = "1970-01-01"))
-pa$last_seen <- as.Date(as.POSIXct(pa$last_seen, origin = "1970-01-01"))
+pa <- getPurpleairSensors(apiReadKey = auth_key)
 
 # CRS (coordinate reference system)
 crs = 4326
 
 # Convert the PurpleAir data frame to an sf object
 pa <- pa %>% na.omit() 
-dt <- st_as_sf(pa, coords=c("lon", "lat"), crs = crs)
+dt <- st_as_sf(pa, coords=c("longitude", "latitude"), crs = crs)
 head(dt)
 ```
 
@@ -67,13 +33,13 @@ head(dt)
     ## Dimension:     XY
     ## Bounding box:  xmin: -124.1288 ymin: 39.43402 xmax: -104.7324 ymax: 49.16008
     ## Geodetic CRS:  WGS 84
-    ##   sensor_id date_created  last_seen                   geometry
-    ## 1        53   2016-02-04 2024-03-18 POINT (-111.7048 40.24674)
-    ## 2        77   2016-03-02 2024-03-18 POINT (-111.8253 40.75082)
-    ## 3        81   2016-06-11 2024-03-18 POINT (-111.6424 40.28764)
-    ## 4       182   2016-08-01 2024-03-18 POINT (-123.7423 49.16008)
-    ## 5       195   2016-08-01 2024-03-18    POINT (-124.1288 41.06)
-    ## 6       314   2016-09-15 2024-03-18 POINT (-104.7324 39.43402)
+    ##   sensor_index date_created  last_seen                   geometry
+    ## 1           53   2016-02-04 2024-03-20 POINT (-111.7048 40.24674)
+    ## 2           77   2016-03-02 2024-03-20 POINT (-111.8253 40.75082)
+    ## 3           81   2016-06-11 2024-03-20 POINT (-111.6424 40.28764)
+    ## 4          182   2016-08-01 2024-03-20 POINT (-123.7423 49.16008)
+    ## 5          195   2016-08-01 2024-03-20    POINT (-124.1288 41.06)
+    ## 6          314   2016-09-15 2024-03-20 POINT (-104.7324 39.43402)
 
 # Get purple air sensors in san fran area (using bounding box)
 
@@ -100,10 +66,10 @@ mapview(purpleairs_sf)
 ## number of sensors
 
 ``` r
-cat("Total number of sensors: ", length(unique(purpleairs_sf$sensor_id)))
+cat("Total number of sensors: ", length(unique(purpleairs_sf$sensor_index)))
 ```
 
-    ## Total number of sensors:  7485
+    ## Total number of sensors:  7484
 
 ``` r
 # Inputs for purple air function
@@ -114,8 +80,8 @@ average <- "60"
 
 ``` r
 # Date range of historical purple air data
-start_date <- as.Date("2018-01-01")
-end_date <- as.Date("2019-12-31")
+start_date <- as.Date("2019-08-01")
+  end_date <- as.Date("2019-12-31")
 current_date <- start_date
 ```
 
@@ -123,7 +89,6 @@ current_date <- start_date
 # Iterate over each 1 month period
 while (current_date <= end_date) {
   
-  # Calculate next date
   next_date <- current_date + months(1) - days(1)
   
   # Ensure we don't go beyond the end date
@@ -136,14 +101,14 @@ while (current_date <= end_date) {
   start_time <- Sys.time()
   
   filtered_purpleairs_sf <- purpleairs_sf %>% filter(last_seen >= current_date) %>% filter(date_created <= next_date)
-  sensorIndex <- unique(filtered_purpleairs_sf$sensor_id)
+  sensorIndex <- unique(filtered_purpleairs_sf$sensor_index)
   
   # Get the data
   purple_air <- getPurpleairApiHistoryV2(
     sensorIndex=sensorIndex,
     apiReadKey=apiReadKey,
-    startTimeStamp=format(current_date, "%Y-%m-%d %H:%M:%S"),
-    endTimeStamp=format(next_date, "%Y-%m-%d %H:%M:%S"),
+    startDate=current_date,
+    endDate=next_date,
     average=average,
     fields=fields
   )
@@ -162,6 +127,34 @@ while (current_date <= end_date) {
 }
 ```
 
+    ## [1] "Processing: 2019-08-01 - 2019-08-31"
+    ## [1] "Processing time: 2019-08-01 - 2019-08-31"
+    ## Time difference of 1.214052 hours
+    ## [1] "Processing: 2019-09-01 - 2019-09-30"
+    ## [1] "Processing time: 2019-09-01 - 2019-09-30"
+    ## Time difference of 1.326625 hours
+    ## [1] "Processing: 2019-10-01 - 2019-10-31"
+    ## [1] "Processing time: 2019-10-01 - 2019-10-31"
+    ## Time difference of 1.352346 hours
+    ## [1] "Processing: 2019-11-01 - 2019-11-30"
+    ## [1] "Processing time: 2019-11-01 - 2019-11-30"
+    ## Time difference of 1.458355 hours
+    ## [1] "Processing: 2019-12-01 - 2019-12-31"
+    ## [1] "Processing time: 2019-12-01 - 2019-12-31"
+    ## Time difference of 1.485901 hours
+
+``` r
+head(purple_air)
+```
+
+    ##              time_stamp pm2.5_atm pm2.5_atm_a pm2.5_atm_b sensor_index
+    ## 299 2019-12-01 00:00:00    1.8025       2.639       0.966          767
+    ## 298 2019-12-01 01:00:00    1.5510       2.204       0.898          767
+    ## 304 2019-12-01 02:00:00    0.2915       0.539       0.044          767
+    ## 133 2019-12-01 03:00:00    1.3010       1.825       0.777          767
+    ## 303 2019-12-01 04:00:00    0.8570       1.335       0.379          767
+    ## 306 2019-12-01 05:00:00    8.3655      10.362       6.369          767
+
 ``` r
 # Get a list of file paths
 file_paths <- list.files(file_directory, pattern = "purple_air_sanfran_.*.csv", full.names = TRUE)
@@ -176,22 +169,22 @@ fulldata <- do.call(rbind, dfs)
 fulldata$month <- format(as.Date(fulldata$time_stamp), "%Y-%m")
 
 # Sensors for each month
-monthly_sensors <- fulldata %>% select(month, sensor_id) %>% distinct()
+monthly_sensors <- fulldata %>% select(month, sensor_index) %>% distinct()
 head(monthly_sensors)
 ```
 
-    ##     month sensor_id
-    ## 1 2017-01       767
-    ## 2 2018-01       767
-    ## 3 2018-01      1742
-    ## 4 2018-01      1860
-    ## 5 2018-01      1874
-    ## 6 2018-01      2031
+    ##     month sensor_index
+    ## 1 2018-01          767
+    ## 2 2018-01         1742
+    ## 3 2018-01         1860
+    ## 4 2018-01         1874
+    ## 5 2018-01         2031
+    ## 6 2018-01         2574
 
 ``` r
 sensor_counts <- monthly_sensors %>%
   group_by(month) %>%
-  summarise(sensor_count = n_distinct(sensor_id))
+  summarise(sensor_count = n_distinct(sensor_index))
 
 ggplot(sensor_counts, aes(x = month, y = sensor_count)) +
   geom_bar(stat = "identity", fill = "lavender", color = "black") +

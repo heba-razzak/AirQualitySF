@@ -5,7 +5,7 @@ output: github_document
 
 ```{r setup, include=FALSE}
 auth_key <- "2C4E0A86-014A-11ED-8561-42010A800005"
-file_directory = "/Users/heba/Desktop/Uni/Lim Lab/Purple Air"
+file_directory = "/Users/heba/Documents/GitHub/lim-lab/Purple Air"
 knitr::opts_knit$set(root.dir = file_directory)
 ```
 
@@ -14,53 +14,25 @@ library(dplyr) # For data manipulation
 library(sf) # For working with spatial data
 library(mapview) # For interactive maps
 library(ggplot2) # For visualizing data
-library(rjson) # For working with JSON data
-library(httr) # For making HTTP requests
 library(lubridate) # For working with dates
 
 # install package from github
 library(devtools)
-install_github("heba-razzak/getPurpleairApiHistoryV2")
+suppressMessages({devtools::install_github("heba-razzak/getPurpleairApiHistoryV2")})
 library(getPurpleairApiHistoryV2)
 ```
 
 # Download purple air sensor id, lat, lon, date created, last seen
 ```{r, download-purpleair-sensors}
-# Store the URL of the API endpoint to request data from for PurpleAir air quality sensors
-all <- "https://api.purpleair.com/v1/sensors?fields=latitude%2C%20longitude%2C%20date_created%2C%20last_seen"
 
-# Define the API key used to authenticate the user's request to the PurpleAir API
-# auth_key  <- "XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX"
-
-# Define the header for the HTTP request to the API, including the API key and Accept content type
-header = c(
-  'X-API-Key' = auth_key,
-  'Accept' = "application/json"
-)
-
-# Get Purple Air data using the following steps
-# Make the HTTP request to the PurpleAir API using the GET function from the httr library
-# Convert the raw content returned by the API into a character string
-# Convert the character string into a JSON object
-# Extract the "data" element from the JSON object and convert it to a data frame
-result <- GET(all, add_headers(header))
-raw <- rawToChar(result$content)
-json <- jsonlite::fromJSON(raw)
-pa <- as.data.frame(json$data)
-
-# Rename the columns of the PurpleAir data frame
-colnames(pa) <- c("sensor_id","date_created", "last_seen", "lat", "lon")
-
-# convert epoch timestamp to date
-pa$date_created <- as.Date(as.POSIXct(pa$date_created, origin = "1970-01-01"))
-pa$last_seen <- as.Date(as.POSIXct(pa$last_seen, origin = "1970-01-01"))
+pa <- getPurpleairSensors(apiReadKey = auth_key)
 
 # CRS (coordinate reference system)
 crs = 4326
 
 # Convert the PurpleAir data frame to an sf object
 pa <- pa %>% na.omit() 
-dt <- st_as_sf(pa, coords=c("lon", "lat"), crs = crs)
+dt <- st_as_sf(pa, coords=c("longitude", "latitude"), crs = crs)
 head(dt)
 ```
 
@@ -85,7 +57,7 @@ mapview(purpleairs_sf)
 
 ## number of sensors
 ```{r, number-of-sensors}
-cat("Total number of sensors: ", length(unique(purpleairs_sf$sensor_id)))
+cat("Total number of sensors: ", length(unique(purpleairs_sf$sensor_index)))
 ```
 
 ```{r, inputs-purple-air}
@@ -97,18 +69,15 @@ average <- "60"
 
 ```{r, date-range}
 # Date range of historical purple air data
-start_date <- as.Date("2018-01-01")
-end_date <- as.Date("2019-12-31")
-start_date <- as.Date("2017-01-01")
-end_date <- as.Date("2017-01-31")
+start_date <- as.Date("2019-08-01")
+  end_date <- as.Date("2019-12-31")
 current_date <- start_date
 ```
 
-```{r, download-data, eval=FALSE}
+```{r, download-data, eval=TRUE}
 # Iterate over each 1 month period
 while (current_date <= end_date) {
   
-  # Calculate next date
   next_date <- current_date + months(1) - days(1)
   
   # Ensure we don't go beyond the end date
@@ -121,14 +90,14 @@ while (current_date <= end_date) {
   start_time <- Sys.time()
   
   filtered_purpleairs_sf <- purpleairs_sf %>% filter(last_seen >= current_date) %>% filter(date_created <= next_date)
-  sensorIndex <- unique(filtered_purpleairs_sf$sensor_id)
+  sensorIndex <- unique(filtered_purpleairs_sf$sensor_index)
   
   # Get the data
   purple_air <- getPurpleairApiHistoryV2(
     sensorIndex=sensorIndex,
     apiReadKey=apiReadKey,
-    startTimeStamp=format(current_date, "%Y-%m-%d %H:%M:%S"),
-    endTimeStamp=format(next_date, "%Y-%m-%d %H:%M:%S"),
+    startDate=current_date,
+    endDate=next_date,
     average=average,
     fields=fields
   )
@@ -147,6 +116,10 @@ while (current_date <= end_date) {
 }
 ```
 
+```{r}
+head(purple_air)
+```
+
 ```{r, bind-purpleair-files}
 # Get a list of file paths
 file_paths <- list.files(file_directory, pattern = "purple_air_sanfran_.*.csv", full.names = TRUE)
@@ -161,14 +134,14 @@ fulldata <- do.call(rbind, dfs)
 fulldata$month <- format(as.Date(fulldata$time_stamp), "%Y-%m")
 
 # Sensors for each month
-monthly_sensors <- fulldata %>% select(month, sensor_id) %>% distinct()
+monthly_sensors <- fulldata %>% select(month, sensor_index) %>% distinct()
 head(monthly_sensors)
 ```
 
 ```{r, count-purpleair-monthly}
 sensor_counts <- monthly_sensors %>%
   group_by(month) %>%
-  summarise(sensor_count = n_distinct(sensor_id))
+  summarise(sensor_count = n_distinct(sensor_index))
 
 ggplot(sensor_counts, aes(x = month, y = sensor_count)) +
   geom_bar(stat = "identity", fill = "lavender", color = "black") +
