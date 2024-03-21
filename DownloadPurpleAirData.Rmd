@@ -4,8 +4,8 @@ output: github_document
 ---
 
 ```{r setup, include=FALSE}
-auth_key <- "2C4E0A86-014A-11ED-8561-42010A800005"
-file_directory = "/Users/heba/Documents/GitHub/lim-lab/Purple Air"
+auth_key <- readr::read_file("inputs/purpleair_key.txt")
+file_directory = readr::read_file("inputs/purpleair_directory.txt")
 knitr::opts_knit$set(root.dir = file_directory)
 ```
 
@@ -74,7 +74,7 @@ start_date <- as.Date("2019-08-01")
 current_date <- start_date
 ```
 
-```{r, download-data, eval=TRUE}
+```{r, download-data, eval=FALSE}
 # Iterate over each 1 month period
 while (current_date <= end_date) {
   
@@ -120,15 +120,40 @@ while (current_date <= end_date) {
 head(purple_air)
 ```
 
-```{r, bind-purpleair-files}
+```{r, bind-purpleair-files, eval=FALSE}
 # Get a list of file paths
-file_paths <- list.files(file_directory, pattern = "purple_air_sanfran_.*.csv", full.names = TRUE)
+file_paths <- list.files(file_directory, pattern = "purple_air_sanfran_.*.csv", full.names = FALSE)
 
 # Read files
 dfs <- lapply(file_paths, read.csv)
 
 # Bind to 1 dataframe
 fulldata <- do.call(rbind, dfs)
+
+# initialize from and to
+from = "9999-99-99"
+to = "0000-00-00"
+
+for (f in file_paths) {
+  from = min(from,substr(f,20,29))
+  to = max(to,substr(f,31,40))
+}
+
+# Save full df to csv
+write.csv(fulldata, file = paste0("purple_air_sanfran_", from, "_", to, ".csv"), row.names = FALSE)
+```
+
+
+```{r, monthly-sensors}
+# Read purple air data (get filename for full data then read it)
+file_paths <- list.files(file_directory, pattern = "purple_air_sanfran_.*.csv", full.names = FALSE)
+from = "9999-99-99"
+to = "0000-00-00"
+for (f in file_paths) {
+  from = min(from,substr(f,20,29))
+  to = max(to,substr(f,31,40))
+}
+fulldata <- read.csv(paste0("purple_air_sanfran_", from, "_", to, ".csv"))
 
 # Add column for month
 fulldata$month <- format(as.Date(fulldata$time_stamp), "%Y-%m")

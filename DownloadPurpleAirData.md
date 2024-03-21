@@ -1,5 +1,4 @@
-DownloadPurpleAirData
-================
+# DownloadPurpleAirData
 
 ``` r
 library(dplyr) # For data manipulation
@@ -28,18 +27,20 @@ dt <- st_as_sf(pa, coords=c("longitude", "latitude"), crs = crs)
 head(dt)
 ```
 
-    ## Simple feature collection with 6 features and 3 fields
-    ## Geometry type: POINT
-    ## Dimension:     XY
-    ## Bounding box:  xmin: -124.1288 ymin: 39.43402 xmax: -104.7324 ymax: 49.16008
-    ## Geodetic CRS:  WGS 84
-    ##   sensor_index date_created  last_seen                   geometry
-    ## 1           53   2016-02-04 2024-03-20 POINT (-111.7048 40.24674)
-    ## 2           77   2016-03-02 2024-03-20 POINT (-111.8253 40.75082)
-    ## 3           81   2016-06-11 2024-03-20 POINT (-111.6424 40.28764)
-    ## 4          182   2016-08-01 2024-03-20 POINT (-123.7423 49.16008)
-    ## 5          195   2016-08-01 2024-03-20    POINT (-124.1288 41.06)
-    ## 6          314   2016-09-15 2024-03-20 POINT (-104.7324 39.43402)
+```         
+## Simple feature collection with 6 features and 3 fields
+## Geometry type: POINT
+## Dimension:     XY
+## Bounding box:  xmin: -124.1288 ymin: 39.43402 xmax: -104.7324 ymax: 49.16008
+## Geodetic CRS:  WGS 84
+##   sensor_index date_created  last_seen                   geometry
+## 1           53   2016-02-04 2024-03-20 POINT (-111.7048 40.24674)
+## 2           77   2016-03-02 2024-03-20 POINT (-111.8253 40.75082)
+## 3           81   2016-06-11 2024-03-20 POINT (-111.6424 40.28764)
+## 4          182   2016-08-01 2024-03-20 POINT (-123.7423 49.16008)
+## 5          195   2016-08-01 2024-03-20    POINT (-124.1288 41.06)
+## 6          314   2016-09-15 2024-03-20 POINT (-104.7324 39.43402)
+```
 
 # Get purple air sensors in san fran area (using bounding box)
 
@@ -69,7 +70,9 @@ mapview(purpleairs_sf)
 cat("Total number of sensors: ", length(unique(purpleairs_sf$sensor_index)))
 ```
 
-    ## Total number of sensors:  7484
+```         
+## Total number of sensors:  7484
+```
 
 ``` r
 # Inputs for purple air function
@@ -127,43 +130,71 @@ while (current_date <= end_date) {
 }
 ```
 
-    ## [1] "Processing: 2019-08-01 - 2019-08-31"
-    ## [1] "Processing time: 2019-08-01 - 2019-08-31"
-    ## Time difference of 1.214052 hours
-    ## [1] "Processing: 2019-09-01 - 2019-09-30"
-    ## [1] "Processing time: 2019-09-01 - 2019-09-30"
-    ## Time difference of 1.326625 hours
-    ## [1] "Processing: 2019-10-01 - 2019-10-31"
-    ## [1] "Processing time: 2019-10-01 - 2019-10-31"
-    ## Time difference of 1.352346 hours
-    ## [1] "Processing: 2019-11-01 - 2019-11-30"
-    ## [1] "Processing time: 2019-11-01 - 2019-11-30"
-    ## Time difference of 1.458355 hours
-    ## [1] "Processing: 2019-12-01 - 2019-12-31"
-    ## [1] "Processing time: 2019-12-01 - 2019-12-31"
-    ## Time difference of 1.485901 hours
+```         
+## [1] "Processing: 2019-08-01 - 2019-08-31"
+## [1] "Processing time: 2019-08-01 - 2019-08-31"
+## Time difference of 1.214052 hours
+## [1] "Processing: 2019-09-01 - 2019-09-30"
+## [1] "Processing time: 2019-09-01 - 2019-09-30"
+## Time difference of 1.326625 hours
+## [1] "Processing: 2019-10-01 - 2019-10-31"
+## [1] "Processing time: 2019-10-01 - 2019-10-31"
+## Time difference of 1.352346 hours
+## [1] "Processing: 2019-11-01 - 2019-11-30"
+## [1] "Processing time: 2019-11-01 - 2019-11-30"
+## Time difference of 1.458355 hours
+## [1] "Processing: 2019-12-01 - 2019-12-31"
+## [1] "Processing time: 2019-12-01 - 2019-12-31"
+## Time difference of 1.485901 hours
+```
 
 ``` r
 head(purple_air)
 ```
 
-    ##              time_stamp pm2.5_atm pm2.5_atm_a pm2.5_atm_b sensor_index
-    ## 299 2019-12-01 00:00:00    1.8025       2.639       0.966          767
-    ## 298 2019-12-01 01:00:00    1.5510       2.204       0.898          767
-    ## 304 2019-12-01 02:00:00    0.2915       0.539       0.044          767
-    ## 133 2019-12-01 03:00:00    1.3010       1.825       0.777          767
-    ## 303 2019-12-01 04:00:00    0.8570       1.335       0.379          767
-    ## 306 2019-12-01 05:00:00    8.3655      10.362       6.369          767
+```         
+##              time_stamp pm2.5_atm pm2.5_atm_a pm2.5_atm_b sensor_index
+## 299 2019-12-01 00:00:00    1.8025       2.639       0.966          767
+## 298 2019-12-01 01:00:00    1.5510       2.204       0.898          767
+## 304 2019-12-01 02:00:00    0.2915       0.539       0.044          767
+## 133 2019-12-01 03:00:00    1.3010       1.825       0.777          767
+## 303 2019-12-01 04:00:00    0.8570       1.335       0.379          767
+## 306 2019-12-01 05:00:00    8.3655      10.362       6.369          767
+```
 
 ``` r
 # Get a list of file paths
-file_paths <- list.files(file_directory, pattern = "purple_air_sanfran_.*.csv", full.names = TRUE)
+file_paths <- list.files(file_directory, pattern = "purple_air_sanfran_.*.csv", full.names = FALSE)
 
 # Read files
 dfs <- lapply(file_paths, read.csv)
 
 # Bind to 1 dataframe
 fulldata <- do.call(rbind, dfs)
+
+# initialize from and to
+from = "9999-99-99"
+to = "0000-00-00"
+
+for (f in file_paths) {
+  from = min(from,substr(f,20,29))
+  to = max(to,substr(f,31,40))
+}
+
+# Save full df to csv
+write.csv(fulldata, file = paste0("purple_air_sanfran_", from, "_", to, ".csv"), row.names = FALSE)
+```
+
+``` r
+# Read purple air data (get filename for full data then read it)
+file_paths <- list.files(file_directory, pattern = "purple_air_sanfran_.*.csv", full.names = FALSE)
+from = "9999-99-99"
+to = "0000-00-00"
+for (f in file_paths) {
+  from = min(from,substr(f,20,29))
+  to = max(to,substr(f,31,40))
+}
+fulldata <- read.csv(paste0("purple_air_sanfran_", from, "_", to, ".csv"))
 
 # Add column for month
 fulldata$month <- format(as.Date(fulldata$time_stamp), "%Y-%m")
@@ -173,13 +204,15 @@ monthly_sensors <- fulldata %>% select(month, sensor_index) %>% distinct()
 head(monthly_sensors)
 ```
 
-    ##     month sensor_index
-    ## 1 2018-01          767
-    ## 2 2018-01         1742
-    ## 3 2018-01         1860
-    ## 4 2018-01         1874
-    ## 5 2018-01         2031
-    ## 6 2018-01         2574
+```         
+##     month sensor_index
+## 1 2018-01          767
+## 2 2018-01         1742
+## 3 2018-01         1860
+## 4 2018-01         1874
+## 5 2018-01         2031
+## 6 2018-01         2574
+```
 
 ``` r
 sensor_counts <- monthly_sensors %>%

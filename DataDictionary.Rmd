@@ -14,39 +14,49 @@ install_github("heba-razzak/createDataDict")
 library(createDataDict)
 ```
 
-```{r, osm-roads, message=FALSE, warning=FALSE}
-setwd('/Users/heba/Desktop/Uni/Lim Lab/OSM')
+```{r, read-osm-roads, message=FALSE, warning=FALSE}
+# osm file directory
+file_directory = readr::read_file("inputs/osm_directory.txt")
+
 # read roads file
-sanfrancell_roads <- st_read("grid238_roads_osm.shp", quiet = TRUE)
+sanfrancell_roads <- st_read(paste0(file_directory,"/sanfrangrid_roads_osm.shp"), quiet = TRUE)
 
 # print skeleton for filling in descriptions
-print_descriptions_df(sanfrancell_roads)
-
-descriptions = data.frame(Variable = c('osm_id',
-                                       'name',
-                                       'highway',
-                                       'lanes',
-                                       'maxspeed',
-                                       'geom'),
-                          Description = c('osm_id_description',
-                                         'name_description',
-                                         'highway_description',
-                                         'lanes_description',
-                                         'maxspeed_description',
-                                         'geom_description'))
-
-print_data_dict(sanfrancell_roads, title="OSM Roads", descriptions=NULL)
+descriptions <- descriptions_df(sanfrancell_roads)
 ```
 
-## **OSM Roads**
 
-**Number of Rows**: `33701`
+```{r, osm-roads-datadict}
+# edit descriptions dataframe
+descriptions[descriptions$Variable=="osm_id",]["Description"] <- "Unique Identifier from OpenStreetMap"
 
-| Variable | Type           |    NA |  %NA | Unique | Description                            |
-|:-----------|:-----------|-----------:|-----------:|-----------:|:-----------|
-| osm_id   | character      |     0 |  0.0 |  33701 | Unique identifier for the road segment |
-| name     | character      | 22500 | 66.8 |   2190 | Name of the road                       |
-| highway  | character      |    22 |  0.1 |     25 |                                        |
-| lanes    | character      | 28080 | 83.3 |      8 |                                        |
-| maxspeed | character      | 29860 | 88.6 |     13 |                                        |
-| geom     | sfc_LINESTRING |     0 |  0.0 |  33701 |                                        |
+# Print data dictionary
+print_data_dict(sanfrancell_roads, title="OSM Roads", descriptions=descriptions)
+```
+
+## **OSM Roads**  
+**Number of Rows**: `1077985`
+
+|Variable |Type           |      NA|  %NA|  Unique|Description                          |
+|:--------|:--------------|-------:|----:|-------:|:------------------------------------|
+|osm_id   |character      |       0|  0.0| 1057749|Unique Identifier from OpenStreetMap |
+|name     |character      |  745113| 69.1|   98062|name_description                     |
+|highway  |character      |      96|  0.0|      36|highway_description                  |
+|lanes    |character      |  958937| 89.0|      15|lanes_description                    |
+|maxspeed |character      | 1004397| 93.2|      32|maxspeed_description                 |
+|geom     |sfc_LINESTRING |       0|  0.0| 1057739|geom_description                     |
+
+
+```{r, purpleair}
+file_directory = readr::read_file("inputs/purpleair_directory.txt")
+# Read purple air data (get filename for full data then read it)
+file_paths <- list.files(file_directory, pattern = "purple_air_sanfran_.*.csv", full.names = FALSE)
+from = "9999-99-99"
+to = "0000-00-00"
+for (f in file_paths) {
+  from = min(from,substr(f,20,29))
+  to = max(to,substr(f,31,40))
+}
+purpleair <- read.csv(paste0("purple_air_sanfran_", from, "_", to, ".csv"))
+
+```

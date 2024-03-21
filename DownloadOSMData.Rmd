@@ -5,7 +5,8 @@ output: github_document
 
 ```{r, setup, include=FALSE}
 # Set working directory
-knitr::opts_knit$set(root.dir = '/Users/heba/Desktop/Uni/Lim Lab/OSM')
+file_directory = readr::read_file("inputs/osm_directory.txt")
+knitr::opts_knit$set(root.dir = file_directory)
 ```
 
 ```{r, load-libraries, message = FALSE, warning = FALSE}
