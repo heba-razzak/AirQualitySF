@@ -1,55 +1,46 @@
 ---
-title: "DataDictionary"
+title: "Data Dictionary"
 output: github_document
 ---
 
-```{r, load-libraries, message = FALSE, warning = FALSE}
+```{r, load-libraries, message = FALSE, warning = FALSE, echo = FALSE}
 library(dplyr) # For data manipulation
 library(sf) # For working with spatial data
 library(data.table)
-
-# install package from github
-library(devtools)
-install_github("heba-razzak/createDataDict")
+# # install package from github
+# library(devtools)
+# devtools::install_github("heba-razzak/createDataDict")
 library(createDataDict)
 ```
 
-```{r, read-osm-roads, message=FALSE, warning=FALSE}
+```{r, read-osm-roads, message=FALSE, warning=FALSE, echo=FALSE, eval=TRUE}
 # osm file directory
 file_directory = readr::read_file("inputs/osm_directory.txt")
 
 # read roads file
 sanfrancell_roads <- st_read(paste0(file_directory,"/sanfrangrid_roads_osm.shp"), quiet = TRUE)
 
-# print skeleton for filling in descriptions
+# get dataframe for descriptions
 descriptions <- descriptions_df(sanfrancell_roads)
-```
 
-
-```{r, osm-roads-datadict}
-# edit descriptions dataframe
-descriptions[descriptions$Variable=="osm_id",]["Description"] <- "Unique Identifier from OpenStreetMap"
-
+# update descriptions dataframe
+descriptions <- update_description(descriptions,
+                                   c("osm_id", "name", "highway", "lanes", "maxspeed", "geom"),
+                                   c("Unique Identifier from OpenStreetMap",
+                                     "Name of the entity",
+                                     "Type of road",
+                                     "Number of lanes",
+                                     "Maximum speed",
+                                     "Geometry information"))
 # Print data dictionary
-print_data_dict(sanfrancell_roads, title="OSM Roads", descriptions=descriptions)
+print_data_dict(sanfrancell_roads, data_title="OSM Roads", descriptions=descriptions)
 ```
 
-## **OSM Roads**  
-**Number of Rows**: `1077985`
-
-|Variable |Type           |      NA|  %NA|  Unique|Description                          |
-|:--------|:--------------|-------:|----:|-------:|:------------------------------------|
-|osm_id   |character      |       0|  0.0| 1057749|Unique Identifier from OpenStreetMap |
-|name     |character      |  745113| 69.1|   98062|name_description                     |
-|highway  |character      |      96|  0.0|      36|highway_description                  |
-|lanes    |character      |  958937| 89.0|      15|lanes_description                    |
-|maxspeed |character      | 1004397| 93.2|      32|maxspeed_description                 |
-|geom     |sfc_LINESTRING |       0|  0.0| 1057739|geom_description                     |
-
-
-```{r, purpleair}
+```{r, purpleair, echo=FALSE, eval=TRUE}
+# directory containing all monthly and full purpleair files
 file_directory = readr::read_file("inputs/purpleair_directory.txt")
 # Read purple air data (get filename for full data then read it)
+# from smallest date in folder to largest date
 file_paths <- list.files(file_directory, pattern = "purple_air_sanfran_.*.csv", full.names = FALSE)
 from = "9999-99-99"
 to = "0000-00-00"
@@ -57,6 +48,37 @@ for (f in file_paths) {
   from = min(from,substr(f,20,29))
   to = max(to,substr(f,31,40))
 }
-purpleair <- read.csv(paste0("purple_air_sanfran_", from, "_", to, ".csv"))
+purpleair <- read.csv(paste0(file_directory,"/purple_air_sanfran_", from, "_", to, ".csv"))
 
+# get dataframe for descriptions
+descriptions <- descriptions_df(purpleair)
+
+# update descriptions dataframe
+descriptions <- update_description(descriptions,
+                                   c("time_stamp",
+                                     "pm2.5_atm",
+                                     "pm2.5_atm_a",
+                                     "pm2.5_atm_b",
+                                     "sensor_index"),
+                                   c("Timestamp of measurement",
+                                     "Returns ATM variant average for channel A and B but excluding downgraded channels. Estimated mass concentration PM2.5 (ug/m3). PM2.5 are fine particulates with a diameter of fewer than 2.5 microns.",
+                                     "PM2.5 concentration in atmosphere (ug/m^3) - channel A",
+                                     "PM2.5 concentration in atmosphere (ug/m^3) - channel B",
+                                     "Sensor index"))
+
+# Print data dictionary
+print_data_dict(purpleair, data_title="Purple Air 2018-2019", descriptions=descriptions)
+```
+
+```{r, df_example, echo=FALSE, eval=FALSE}
+# get dataframe for descriptions
+descriptions <- descriptions_df(df)
+
+# update descriptions dataframe
+descriptions <- update_description(descriptions,
+                                   c(""),
+                                   c(""))
+
+# Print data dictionary
+print_data_dict(df, data_title="df", descriptions=descriptions)
 ```
