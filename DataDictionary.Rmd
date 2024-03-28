@@ -70,6 +70,87 @@ descriptions <- update_description(descriptions,
 print_data_dict(purpleair, data_title="Purple Air 2018-2019", descriptions=descriptions)
 ```
 
+```{r, uber-speeds, echo=FALSE, eval=TRUE}
+file_directory = readr::read_file("inputs/uber_directory.txt")
+
+uber_speeds <- fread(paste0(file_directory,"/movement-speeds-hourly-san-francisco-2018-1.csv"))
+
+# get dataframe for descriptions
+descriptions <- descriptions_df(uber_speeds)
+
+# update descriptions dataframe
+descriptions <- update_description(descriptions,
+                                   c("year", "month", "day", "hour", "utc_timestamp", "segment_id",
+                                     "start_junction_id", "end_junction_id", "osm_way_id",
+                                     "osm_start_node_id", "osm_end_node_id", "speed_mph_mean",
+                                     "speed_mph_stddev"),
+                                   c("Year",
+                                     "Month",
+                                     "Day",
+                                     "Hour",
+                                     "Date & time of observations in UTC format",
+                                     "Special Ids assigned to road segments by Uber",
+                                     "Junction where the segment starts i.e., a roundabout",
+                                     "Junction where the segment ends",
+                                     "OSM Way Id with One to Many relationship with segment_id",
+                                     "Start node Id of OSM corresponding to start_junction_id",
+                                     "End node Id of OSM corresponding to end_junction_id",
+                                     "Mean speed of vehicles within an hour",
+                                     "Standard deviation of speed of vehicles in an hour"))
+
+
+# Print data dictionary
+print_data_dict(uber_speeds, 
+                data_title="Uber Speeds 2018/01 (as downloaded from uber)", 
+                descriptions=descriptions)
+```
+
+```{r, uber-2018, echo=FALSE, eval=TRUE}
+file_directory = readr::read_file("inputs/uber_directory.txt")
+
+uber_speeds <- fread(paste0(file_directory,"/uber_2018.csv"))
+
+# get dataframe for descriptions
+descriptions <- descriptions_df(uber_speeds)
+
+# update descriptions dataframe utc_timestamp,osm_way_id,speed_mph_mean
+descriptions <- update_description(descriptions,
+                                   c("utc_timestamp", 
+                                     "osm_way_id", 
+                                     "speed_mph_mean"),
+                                   c("Date & time of observations in UTC format",
+                                     "OSM Way Id with One to Many relationship with segment_id",
+                                     "Mean speed of vehicles within an hour"))
+
+# Print data dictionary
+print_data_dict(uber_speeds, 
+                data_title="Uber Speeds 2018 (selected columns)", 
+                descriptions=descriptions)
+```
+
+```{r, uber-2019, echo=FALSE, eval=TRUE}
+file_directory = readr::read_file("inputs/uber_directory.txt")
+
+uber_speeds <- fread(paste0(file_directory,"/uber_2019.csv"))
+
+# get dataframe for descriptions
+descriptions <- descriptions_df(uber_speeds)
+
+# update descriptions dataframe utc_timestamp,osm_way_id,speed_mph_mean
+descriptions <- update_description(descriptions,
+                                   c("utc_timestamp", 
+                                     "osm_way_id", 
+                                     "speed_mph_mean"),
+                                   c("Date & time of observations in UTC format",
+                                     "OSM Way Id with One to Many relationship with segment_id",
+                                     "Mean speed of vehicles within an hour"))
+
+# Print data dictionary
+print_data_dict(uber_speeds, 
+                data_title="Uber Speeds 2019 (selected columns)", 
+                descriptions=descriptions)
+```
+
 ```{r, df_example, echo=FALSE, eval=FALSE}
 # get dataframe for descriptions
 descriptions <- descriptions_df(df)
