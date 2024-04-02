@@ -20,18 +20,18 @@ To achieve this goal, the project integrates and analyzes diverse datasets sourc
 
     Download information for all PurpleAir sensors, then filter to area and dates needed. Download historical hourly air quality data for filtered PurpleAir sensors for each month, then combine into one file. Includes bar plot showing number of active PurpleAir sensors for each month.
 
+-   [Download Weather Data](DownloadWeatherData.md): Create hourly weather dataset including temperature, humidity and wind information.
+
+    Obtain weather station information for California using RIEM. Collects weather data for the stations in Bay Area. Processes the retrieved weather data, calculates averages for temperature, relative humidity, wind direction, wind speed, and wind gusts grouped by station and hour.
+
 -   [Combining Uber CSVs](CombiningUberCSVs.md): Filtering and Combining multiple CSV files from Uber.
 
     Reading individual monthly Uber CSV files, selecting necessary columns, merging data from different files into one for each year, and verifying the correctness of the combined files.
-
--   [Temperature](Temperature.md): Create hourly weather dataset including temperature, humidity and wind information.
-
-    Obtain weather station information for California using RIEM. Collects weather data for the stations in Bay Area. Processes the retrieved weather data, calculates averages for temperature, relative humidity, wind direction, wind speed, and wind gusts grouped by station and hour.
 
 -   [Data Preprocessing](DataPreprocessing.md): Prepare final dataset. Cleans and combines PurpleAir, Uber, OSM, and weather data.
 
     Clean PurpleAir data points, ensuring data quality by filtering out inconsistencies. Calculate congestion ratios from uber speeds data. Creates buffer around each purpleair sensor, finds intersections with other datasets and prepares for use in model.
 
--   [Building Model](model.md): Developing the model for predicting PM2.5 concentrations.
+-   [Model Building](ModelBuilding.md): Developing the model for predicting PM2.5 concentrations.
 
     Trains a random forest model for predicting PM2.5 concentrations and evaluates the model's performance using metrics like Mean Absolute Error (MAE) and R-squared.
