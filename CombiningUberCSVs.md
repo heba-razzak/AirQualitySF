@@ -1,21 +1,16 @@
----
-title: "Combining Uber CSVs"
-output: github_document
----
-
-```{r setup, include=FALSE}
-file_directory = readr::read_file("inputs/uber_directory.txt")
-knitr::opts_knit$set(root.dir = file_directory)
-```
+Combining Uber CSVs
+================
 
 ## Load required libraries
-```{r, load-libraries, message = FALSE, warning = FALSE}
+
+``` r
 library(dplyr) # For data manipulation
-library(data.table) # Faster than dataframes (for big files) 
+library(data.table) # Faster than dataframes (for big files)
 ```
 
-## Read each uber monthly file, and save it only keeping neccessary columns 
-```{r, save-uber-files, eval=FALSE}
+## Read each uber monthly file, and save it only keeping neccessary columns
+
+``` r
 # Get a list of file paths
 file_paths <- list.files(file_directory, pattern = "movement-speeds-hourly-san-francisco-.*.csv", full.names = FALSE)
 
@@ -31,7 +26,8 @@ for (file in file_paths) {
 ```
 
 ## Read cleaned uber files, and save to 1 file (2018)
-```{r, bind-uber-files-2018, eval=FALSE}
+
+``` r
 # Get a list of file paths
 file_paths <- list.files(file_directory, pattern = "uber-2018.*.csv", full.names = FALSE)
 
@@ -52,7 +48,8 @@ fwrite(uber_data, "uber_2018.csv")
 ```
 
 ## Read cleaned uber files, and save to 1 file (2019)
-```{r, bind-uber-files-2019, eval=FALSE}
+
+``` r
 # Get a list of file paths
 file_paths <- list.files(file_directory, pattern = "uber-2019.*.csv", full.names = FALSE)
 
@@ -73,7 +70,8 @@ fwrite(uber_data, "uber_2019.csv")
 ```
 
 ## Check that 2018 and 2019 files contain correct number of rows
-```{r, check-data, eval=TRUE}
+
+``` r
 # Get a list of file paths
 file_paths <- list.files(file_directory, pattern = "uber-.*.csv", full.names = FALSE)
 
@@ -84,16 +82,20 @@ total_rows <- 0
 for (file in file_paths) {
    # read file
   data <- data.table::fread(file)
-  
+
   # Count the number of rows in the data
   num_rows <- nrow(data)
-  
+
   # Add the number of rows to the total row count
   total_rows <- total_rows + num_rows
 }
 
 cat("Total Rows all monthly files: ", format(total_rows, big.mark = ",", scientific = F), "\n")
+```
 
+    ## Total Rows all monthly files:  631,636,425
+
+``` r
 # print number of rows for 2018-2019 file
 file = "uber_2018.csv"
 data <- data.table::fread(file)
@@ -105,3 +107,4 @@ num_rows2019 <- nrow(data)
 
 cat("\n Total Rows 2018+2019 files: ", format(num_rows2018 + num_rows2019, big.mark = ",", scientific = F),"\n")
 ```
+    ##  Total Rows 2018+2019 files:  631,636,425

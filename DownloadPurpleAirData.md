@@ -1,4 +1,6 @@
-# DownloadPurpleAirData
+# Download PurpleAir Data
+
+## Load required libraries
 
 ``` r
 library(dplyr) # For data manipulation

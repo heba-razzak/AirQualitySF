@@ -1,5 +1,5 @@
 ---
-title: "DownloadPurpleAirData"
+title: "Download PurpleAir Data"
 output: github_document
 ---
 
@@ -9,6 +9,7 @@ file_directory = readr::read_file("inputs/purpleair_directory.txt")
 knitr::opts_knit$set(root.dir = file_directory)
 ```
 
+## Load required libraries
 ```{r, load-libraries, message = FALSE, warning = FALSE}
 library(dplyr) # For data manipulation
 library(sf) # For working with spatial data
