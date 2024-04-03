@@ -3,6 +3,11 @@ title: "Download Weather Data"
 output: github_document
 ---
 
+```{r, setup, include=FALSE}
+file_directory <- readr::read_file("inputs/weather_directory.txt")
+knitr::opts_knit$set(root.dir = file_directory)
+```
+
 ## Load required libraries
 ```{r, load-libraries, message = FALSE, warning = FALSE}
 library(riem) # For weather data
@@ -11,46 +16,38 @@ library(sf) # For working with spatial data
 library(mapview) # For interactive maps
 ```
 
-```{r, eval=FALSE}
+# Get info for California weather stations
+```{r, weather-stations, eval=TRUE}
 # Networks where name contains "california"
-riem_networks() %>% filter(grepl("California", name, ignore.case = TRUE))
-```
+cali_networks <- riem_networks() %>% filter(grepl("California", name, ignore.case = TRUE))
+stations <- riem_stations(network = cali_networks$code) %>% select(id,name,elevation,county,lon,lat)
 
-```{r, eval=FALSE}
-stations <- riem_stations(network = "CA_ASOS") %>% select(id,name,elevation,county,lon,lat)
+# CRS (coordinate reference system)
+crs = 4326
+
+# convert stations to sf object
+stations_sf <- st_as_sf(stations, coords = c("lon", "lat"), crs = crs)
 ```
 
 ## Bounding box of san francisco and surrounding areas
-```{r, eval=FALSE}
-# greater san fran area
-bbox <- c(left = -123.8, bottom = 36.9, right = -121.0, top = 39.0)
+```{r, bay-area-bbox, eval=TRUE}
+# Greater san fran area
+bbox <- c(xmin = -123.8, ymin = 36.9, xmax = -121.0, ymax = 39.0)
 
-x = list(rbind(c(bbox["left"],bbox["bottom"]),
-               c(bbox["left"],bbox["top"]),
-               c(bbox["right"],bbox["top"]),
-               c(bbox["right"],bbox["bottom"]),
-               c(bbox["left"],bbox["bottom"])))
+# Shapefile of bounding box
+bbox_sf <- st_as_sfc(st_bbox(bbox))
 
-# Create a polygon for san fran area
-bbox_sf <- st_polygon(x)
+# Set CRS (coordinate reference system)
+st_crs(bbox_sf) <- crs
 
-# convert to sf object
-crs = 4326
-bbox_sf <- st_sfc(bbox_sf, crs=crs)
-
+# since we might have purple air sensors close to the perimeter of the bounding box
+# we will include weather stations within a certain buffer
 # create new area with additional buffer
 new_bbox_sf <- st_buffer(bbox_sf, 25000)
-new_bbox_sf <- st_sfc(new_bbox_sf, crs=crs)
 ```
 
-```{r, eval=FALSE}
-# convert stations to sf object
-stations_sf <- st_as_sf(stations, coords = c("lon", "lat"), crs = crs)
-# map san fran & buffer area & stations
-mapview(bbox_sf) + mapview(new_bbox_sf) + mapview(stations_sf)
-```
-
-```{r, eval=FALSE}
+## Map of weather stations in Bay area
+```{r, stations-map, eval=TRUE}
 # get intersection of buffer with stations
 stations_within_bbox <- st_intersection(stations_sf, new_bbox_sf)
 
@@ -58,124 +55,45 @@ stations_within_bbox <- st_intersection(stations_sf, new_bbox_sf)
 mapview(stations_within_bbox)
 ```
 
-```{r, download-weather, warning=FALSE, eval=FALSE}
+## Download weather data for each station for specified data range
+```{r, download-weather, warning=FALSE, eval=TRUE}
+# Initialize empty dataframe to store weather measures for all stations
 measures_df <- data.frame()
 
-# Collect weather data for 'SFO' station for the specified date range
+# Loop through each weather station within the specified bounding box
 for (id in stations_within_bbox$id) {
   # Get measures for the current station
-  measures <- riem_measures(station = id, date_start = "2018-01-01", date_end = "2018-01-02")
+  measures <- riem_measures(station = id, date_start = "2018-01-01", date_end = "2019-12-31")
 
   if (is.null(measures)) {
     next  # Move to the next iteration of the loop
   }
 
-  # select needed columns
-  new_df = measures %>% select(station, valid, tmpf, relh, drct, sknt, gust, lon, lat)
-
+  # select relevant columns
+  measures_subset = measures %>% 
+    select(station, valid, tmpf, relh, drct, sknt, gust, lon, lat) %>%
+    filter(if_any(c(tmpf, relh, drct, sknt, gust), ~ !is.na(.)))
+  
+  # Aggregate weather data to hourly intervals and calculate mean for each variable
+  measures_subset$timestamp <- format(measures_subset$valid, "%Y-%m-%d %H:00:00")
+  
+  # Create summary dataframe with hourly averages of weather variables for each station
+  summary_df <- measures_subset %>%
+    group_by(station, timestamp) %>%
+    summarize(
+      temp_fahrenheit = mean(tmpf, na.rm = TRUE),
+      rel_humidity = mean(relh, na.rm = TRUE),
+      wind_direction = mean(drct, na.rm = TRUE),
+      wind_speed = mean(sknt, na.rm = TRUE),
+      wind_gust = mean(gust, na.rm = TRUE),
+      lon = first(lon),
+      lat = first(lat),
+      .groups = 'drop')
+  
   # Add to measures_df
-  measures_df <- rbind(measures_df, new_df)
+  measures_df <- rbind(measures_df, summary_df)
+  
+  # Save to CSV file
+  write.csv(measures_df, file = paste0("weather.csv"), row.names = FALSE)
 }
-```
-
-```{r, eval=FALSE}
-measures_df$hour <- format(measures_df$valid, "%Y-%m-%d %H:00:00")
-# Group by station and hour, and calculate the average for each variable
-summary_df <- measures_df %>%
-  group_by(station, hour) %>%
-  summarize(
-    tmpf_avg = mean(tmpf, na.rm = TRUE),
-    relh_avg = mean(relh, na.rm = TRUE),
-    drct_avg = mean(drct, na.rm = TRUE),
-    sknt_avg = mean(sknt, na.rm = TRUE),
-    gust_avg = mean(gust, na.rm = TRUE),
-    lon = first(lon),
-    lat = first(lat)
-  ) %>%
-  ungroup()
-
-# View the resulting summary data frame
-summary_df
-```
-
-
-```{r, old-code, include=FALSE, eval=FALSE}
-#Select the network you want and view all available stations.
-stations <- riem_stations(network = "CA_ASOS")
-stations
-#Collect all available data for a selected range for the desired station.
-measures <- riem_measures(station = 'SFO', date_start = "2018-01-01", date_end = "2018-01-02")
-
-measures
-
-#Selecting the desired variables. Description of variables is available at https://cran.r-project.org/web/packages/riem/riem.pdf
-new_df = subset(measures, select = c(valid, tmpf, relh, drct, sknt, gust))
-
-# • valid: timestamp of the observation (UTC)
-# • tmpf: Air Temperature in Fahrenheit, typically @ 2 meters
-# • relh: Relative Humidity in
-# • drct: Wind Direction in degrees from north
-# • sknt: Wind Speed in knots
-# • gust: Wind Gust in knots
-
-#Split the valid column into Date and Time
-new_df[c('Date', 'Time')] <- str_split_fixed(new_df$valid, ' ', 2)
-
-#This is the entire dataset with occasional 5 minute data. However, for hourly data only, follow the code below.
-new_df$valid <- as.character(new_df$valid)
-
-#Extract the hour from each timestamp
-new_df$Hour = NA
-new_df[c('Hour', 'Cut1', 'Cut2')] <- str_split_fixed(new_df$Time, ':', 3)
-new_df <- new_df[,-c(10,11)]
-new_df$Hour = paste(new_df$Hour, ':00:00', sep = '')
-new_df$valid_new = paste(new_df$Date, new_df$Hour, sep = ' ')
-
-#Create a blank dataframe that contains all the dates and times you require. This will act as the reference dataframe to ensure all dates and times are contained in the main dataframe.
-dates <- seq(as.Date("2017-01-01"), as.Date("2023-06-30"), by="days")
-dates_new = c()
-for (i in 1:length(dates)) {
-  dates_new = append(dates_new, rep(dates[i], 24))
-}
-times <- seq(00,23, by = 1)
-times <- as.character(times)
-for (i in 1:length(times)) {
-  if (nchar(times[i]) < 2) {
-    times[i] = paste('0',times[i], sep = '')
-  }
-  times[i] = paste(times[i], ":00:00", sep = '')
-}
-final_df <- data.frame(dates_new, rep(times, length(dates)))
-colnames(final_df) <- c('Date', 'Time')
-final_df$valid = paste(final_df$Date, final_df$Time)
-final_df$Temperature = NA
-final_df$Humidity = NA
-final_df$WindDirection = NA
-final_df$WindSpeed = NA
-final_df$WindGust = NA
-final_df
-
-#Creating the main dataframe
-test <- aggregate(new_df$tmpf, list(new_df$valid_new), FUN = mean, na.rm = TRUE)
-colnames(test) <- c('valid', 'Temperature')
-
-temp <- aggregate(new_df$relh, list(new_df$valid_new), FUN = mean, na.rm = TRUE)
-test$Humidity = temp$x
-temp <- aggregate(new_df$drct, list(new_df$valid_new), FUN = mean, na.rm = TRUE)
-test$WindDirection = temp$x
-temp <- aggregate(new_df$sknt, list(new_df$valid_new), FUN = mean, na.rm = TRUE)
-test$WindSpeed = temp$x
-temp <- aggregate(new_df$gust, list(new_df$valid_new), FUN = mean, na.rm = TRUE)
-test$WindGust = temp$x
-
-#Finding which Date and Time values are missing and adding them in with NA values.
-not_df <- final_df[which(!(final_df$valid %in% test$valid)),]
-
-test <- rbind(test, not_df[,c(3, 4, 5, 6, 7, 8)])
-test <- test[order((test$valid)),]
-colnames(test)[1] = 'DateTime'
-test
-
-#Write the dataframe to the desired location.
-write.csv(test, '/Users/sarveshparadkar/Desktop/Research Professor Lim/SanFranciscoTempandHumidity.csv', row.names=FALSE)
 ```

@@ -10,90 +10,95 @@ library(sf) # For working with spatial data
 library(mapview) # For interactive maps
 ```
 
-``` r
-# Networks where name contains "california"
-riem_networks() %>% filter(grepl("California", name, ignore.case = TRUE))
-```
+# Get info for California weather stations
 
 ``` r
-stations <- riem_stations(network = "CA_ASOS") %>% select(id,name,elevation,county,lon,lat)
+# Networks where name contains "california"
+cali_networks <- riem_networks() %>% filter(grepl("California", name, ignore.case = TRUE))
+stations <- riem_stations(network = cali_networks$code) %>% select(id,name,elevation,county,lon,lat)
+
+# CRS (coordinate reference system)
+crs = 4326
+
+# convert stations to sf object
+stations_sf <- st_as_sf(stations, coords = c("lon", "lat"), crs = crs)
 ```
 
 ## Bounding box of san francisco and surrounding areas
 
 ``` r
-# greater san fran area
-bbox <- c(left = -123.8, bottom = 36.9, right = -121.0, top = 39.0)
+# Greater san fran area
+bbox <- c(xmin = -123.8, ymin = 36.9, xmax = -121.0, ymax = 39.0)
 
-x = list(rbind(c(bbox["left"],bbox["bottom"]),
-               c(bbox["left"],bbox["top"]),
-               c(bbox["right"],bbox["top"]),
-               c(bbox["right"],bbox["bottom"]),
-               c(bbox["left"],bbox["bottom"])))
+# Shapefile of bounding box
+bbox_sf <- st_as_sfc(st_bbox(bbox))
 
-# Create a polygon for san fran area
-bbox_sf <- st_polygon(x)
+# Set CRS (coordinate reference system)
+st_crs(bbox_sf) <- crs
 
-# convert to sf object
-crs = 4326
-bbox_sf <- st_sfc(bbox_sf, crs=crs)
-
+# since we might have purple air sensors close to the perimeter of the bounding box
+# we will include weather stations within a certain buffer
 # create new area with additional buffer
 new_bbox_sf <- st_buffer(bbox_sf, 25000)
-new_bbox_sf <- st_sfc(new_bbox_sf, crs=crs)
 ```
 
-``` r
-# convert stations to sf object
-stations_sf <- st_as_sf(stations, coords = c("lon", "lat"), crs = crs)
-# map san fran & buffer area & stations
-mapview(bbox_sf) + mapview(new_bbox_sf) + mapview(stations_sf)
-```
+## Map of weather stations in Bay area
 
 ``` r
 # get intersection of buffer with stations
 stations_within_bbox <- st_intersection(stations_sf, new_bbox_sf)
+```
 
+    ## Warning: attribute variables are assumed to be spatially constant throughout
+    ## all geometries
+
+``` r
 # Plot the intersection
 mapview(stations_within_bbox)
 ```
 
+![](DownloadWeatherData_files/figure-gfm/stations-map-1.png)<!-- -->
+
+## Download weather data for each station for specified data range
+
 ``` r
+# Initialize empty dataframe to store weather measures for all stations
 measures_df <- data.frame()
 
-# Collect weather data for 'SFO' station for the specified date range
+# Loop through each weather station within the specified bounding box
 for (id in stations_within_bbox$id) {
   # Get measures for the current station
-  measures <- riem_measures(station = id, date_start = "2018-01-01", date_end = "2018-01-02")
+  measures <- riem_measures(station = id, date_start = "2018-01-01", date_end = "2019-12-31")
 
   if (is.null(measures)) {
     next  # Move to the next iteration of the loop
   }
 
-  # select needed columns
-  new_df = measures %>% select(station, valid, tmpf, relh, drct, sknt, gust, lon, lat)
-
+  # select relevant columns
+  measures_subset = measures %>% 
+    select(station, valid, tmpf, relh, drct, sknt, gust, lon, lat) %>%
+    filter(if_any(c(tmpf, relh, drct, sknt, gust), ~ !is.na(.)))
+  
+  # Aggregate weather data to hourly intervals and calculate mean for each variable
+  measures_subset$timestamp <- format(measures_subset$valid, "%Y-%m-%d %H:00:00")
+  
+  # Create summary dataframe with hourly averages of weather variables for each station
+  summary_df <- measures_subset %>%
+    group_by(station, timestamp) %>%
+    summarize(
+      temp_fahrenheit = mean(tmpf, na.rm = TRUE),
+      rel_humidity = mean(relh, na.rm = TRUE),
+      wind_direction = mean(drct, na.rm = TRUE),
+      wind_speed = mean(sknt, na.rm = TRUE),
+      wind_gust = mean(gust, na.rm = TRUE),
+      lon = first(lon),
+      lat = first(lat),
+      .groups = 'drop')
+  
   # Add to measures_df
-  measures_df <- rbind(measures_df, new_df)
+  measures_df <- rbind(measures_df, summary_df)
+  
+  # Save to CSV file
+  write.csv(measures_df, file = paste0("weather.csv"), row.names = FALSE)
 }
-```
-
-``` r
-measures_df$hour <- format(measures_df$valid, "%Y-%m-%d %H:00:00")
-# Group by station and hour, and calculate the average for each variable
-summary_df <- measures_df %>%
-  group_by(station, hour) %>%
-  summarize(
-    tmpf_avg = mean(tmpf, na.rm = TRUE),
-    relh_avg = mean(relh, na.rm = TRUE),
-    drct_avg = mean(drct, na.rm = TRUE),
-    sknt_avg = mean(sknt, na.rm = TRUE),
-    gust_avg = mean(gust, na.rm = TRUE),
-    lon = first(lon),
-    lat = first(lat)
-  ) %>%
-  ungroup()
-
-# View the resulting summary data frame
-summary_df
 ```

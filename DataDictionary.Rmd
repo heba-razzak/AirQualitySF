@@ -151,6 +151,32 @@ print_data_dict(uber_speeds,
                 descriptions=descriptions)
 ```
 
+```{r, weather, echo=FALSE, eval=TRUE}
+file_directory = readr::read_file("inputs/weather_directory.txt")
+
+weather <- fread(paste0(file_directory,"/weather.csv"))
+
+# get dataframe for descriptions
+descriptions <- descriptions_df(weather)
+
+# update descriptions dataframe
+descriptions <- update_description(descriptions,
+                                   c("station", "timestamp", "temp_fahrenheit",
+                                     "rel_humidity", "wind_direction",
+                                     "wind_speed", "wind_gust", "lon", "lat"),
+                                   c("Weather station identifier",
+                                     "Timestamp of the observation (UTC)",
+                                     "Air Temperature in Fahrenheit, typically @ 2 meters",
+                                     "Relative Humidity in %",
+                                     "Wind Direction in degrees from north",
+                                     "Wind Speed in knots",
+                                     "Wind Gust in knots",
+                                     "Longitude",
+                                     "Latitude"))
+# Print data dictionary
+print_data_dict(weather, data_title="Weather Stations", descriptions=descriptions)
+```
+
 ```{r, df_example, echo=FALSE, eval=FALSE}
 # get dataframe for descriptions
 descriptions <- descriptions_df(df)

@@ -3,9 +3,9 @@ title: "Download PurpleAir Data"
 output: github_document
 ---
 
-```{r setup, include=FALSE}
+```{r, setup, include=FALSE}
 auth_key <- readr::read_file("inputs/purpleair_key.txt")
-file_directory = readr::read_file("inputs/purpleair_directory.txt")
+file_directory <- readr::read_file("inputs/purpleair_directory.txt")
 knitr::opts_knit$set(root.dir = file_directory)
 ```
 

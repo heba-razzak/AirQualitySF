@@ -4,7 +4,11 @@ output: github_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+weather_directory <- readr::read_file("inputs/weather_directory.txt")
+osm_directory <- readr::read_file("inputs/osm_directory.txt")
+purpleair_directory <- readr::read_file("inputs/purpleair_directory.txt")
+uber_directory <- readr::read_file("inputs/uber_directory.txt")
+auth_key <- readr::read_file("inputs/purpleair_key.txt")
 ```
 
 ## Load required libraries
@@ -50,10 +54,8 @@ uberformat <- sprintf("%d-%d", year, month)
 
 # read csv files
 ```{r, read-csv-files, eval=FALSE}
-purpleair <- fread(paste0(
-  "/Users/heba/Desktop/Uni/Lim Lab/Purple Air/purple_air_sanfran_",purpleairformat,".csv"))
-uber_data <- fread(paste0(
-  "/Users/heba/Desktop/Uni/Lim Lab/Uber/Speeds/movement-speeds-hourly-san-francisco-",uberformat,".csv"))
+purpleair <- fread(paste0(purpleair_directory, "/purple_air_sanfran_", purpleairformat, ".csv"))
+uber_data <- fread(paste0(uber_directory, "/uber-", uberformat, ".csv"))
 ```
 
 ```{r, eval=FALSE}
@@ -67,9 +69,6 @@ uber_data$osm_way_id <- as.character(uber_data$osm_way_id)
 ```{r, eval=FALSE}
 # Store the URL of the API endpoint to request data from for PurpleAir air quality sensors
 all <- "https://api.purpleair.com/v1/sensors?fields=latitude%2C%20longitude%2C%20date_created%2C%20last_seen"
-
-# Define the API key used to authenticate the user's request to the PurpleAir API
-auth_key  <- "2C4E0A86-014A-11ED-8561-42010A800005"
 
 # Define the header for the HTTP request to the API, including the API key and Accept content type
 header = c('X-API-Key' = auth_key,'Accept' = "application/json")

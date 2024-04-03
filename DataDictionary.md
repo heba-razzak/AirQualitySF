@@ -65,3 +65,19 @@ Data Dictionary
 | utc_timestamp  | POSIXct |   0 | 0.00% |  8,657 | Date & time of observations in UTC format                |
 | osm_way_id     | integer |   0 | 0.00% | 87,620 | OSM Way Id with One to Many relationship with segment_id |
 | speed_mph_mean | numeric |   0 | 0.00% | 78,953 | Mean speed of vehicles within an hour                    |
+
+## **Weather Stations**
+
+**Number of rows:** `588,075`
+
+| Variable        | Type      |      NA |    %NA | Unique | Description                                         |
+|:----------------|:----------|--------:|-------:|-------:|:----------------------------------------------------|
+| station         | character |       0 |  0.00% |     37 | Weather station identifier                          |
+| timestamp       | POSIXct   |       0 |  0.00% | 17,496 | Timestamp of the observation (UTC)                  |
+| temp_fahrenheit | numeric   |   9,514 |  1.62% |  3,470 | Air Temperature in Fahrenheit, typically @ 2 meters |
+| rel_humidity    | numeric   |  11,860 |  2.02% | 34,010 | Relative Humidity in %                              |
+| wind_direction  | numeric   |   5,113 |  0.87% |  3,322 | Wind Direction in degrees from north                |
+| wind_speed      | numeric   |   1,216 |  0.21% |  2,201 | Wind Speed in knots                                 |
+| wind_gust       | numeric   | 512,330 | 87.12% |    579 | Wind Gust in knots                                  |
+| lon             | numeric   |       0 |  0.00% |     37 | Longitude                                           |
+| lat             | numeric   |       0 |  0.00% |     37 | Latitude                                            |
