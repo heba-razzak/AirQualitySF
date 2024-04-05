@@ -18,7 +18,7 @@ library(createDataDict)
 file_directory = readr::read_file("inputs/osm_directory.txt")
 
 # read roads file
-sanfrancell_roads <- st_read(paste0(file_directory,"/sanfrangrid_roads_osm.shp"), quiet = TRUE)
+sanfrancell_roads <- st_read(paste0(file_directory,"/sanfrangrid_roads_osm.gpkg"), quiet = TRUE)
 
 # get dataframe for descriptions
 descriptions <- descriptions_df(sanfrancell_roads)
@@ -36,19 +36,30 @@ descriptions <- update_description(descriptions,
 print_data_dict(sanfrancell_roads, data_title="OSM Roads", descriptions=descriptions)
 ```
 
+```{r, purpleair-sensors, echo=FALSE, eval=TRUE}
+# directory containing purpleair files
+file_directory = readr::read_file("inputs/purpleair_directory.txt")
+
+# read purpleair sensor data
+purpleair_sensors <- st_read(paste0(file_directory, "/purpleair_sensors.gpkg"), quiet = TRUE)
+
+# get dataframe for descriptions
+descriptions <- descriptions_df(purpleair_sensors)
+
+# update descriptions dataframe
+descriptions <- update_description(descriptions,
+                                   c("sensor_index", "geom"),
+                                   c("Sensor index", "Geometry information"))
+
+# Print data dictionary
+print_data_dict(purpleair_sensors, data_title="PurpleAir Sensors", descriptions=descriptions)
+```
+
 ```{r, purpleair, echo=FALSE, eval=TRUE}
 # directory containing all monthly and full purpleair files
 file_directory = readr::read_file("inputs/purpleair_directory.txt")
-# Read purple air data (get filename for full data then read it)
-# from smallest date in folder to largest date
-file_paths <- list.files(file_directory, pattern = "purple_air_sanfran_.*.csv", full.names = FALSE)
-from = "9999-99-99"
-to = "0000-00-00"
-for (f in file_paths) {
-  from = min(from,substr(f,20,29))
-  to = max(to,substr(f,31,40))
-}
-purpleair <- read.csv(paste0(file_directory,"/purple_air_sanfran_", from, "_", to, ".csv"))
+# Read purple air data
+purpleair <- fread(paste0(file_directory,"/purple_air_sanfran_2018-2019.csv"))
 
 # get dataframe for descriptions
 descriptions <- descriptions_df(purpleair)
@@ -70,7 +81,7 @@ descriptions <- update_description(descriptions,
 print_data_dict(purpleair, data_title="Purple Air 2018-2019", descriptions=descriptions)
 ```
 
-```{r, uber-speeds, echo=FALSE, eval=TRUE}
+```{r, uber-speeds, echo=FALSE, eval=FALSE}
 file_directory = readr::read_file("inputs/uber_directory.txt")
 
 uber_speeds <- fread(paste0(file_directory,"/movement-speeds-hourly-san-francisco-2018-1.csv"))
@@ -124,7 +135,7 @@ descriptions <- update_description(descriptions,
 
 # Print data dictionary
 print_data_dict(uber_speeds, 
-                data_title="Uber Speeds 2018 (selected columns)", 
+                data_title="Uber Speeds 2018", 
                 descriptions=descriptions)
 ```
 
@@ -147,7 +158,7 @@ descriptions <- update_description(descriptions,
 
 # Print data dictionary
 print_data_dict(uber_speeds, 
-                data_title="Uber Speeds 2019 (selected columns)", 
+                data_title="Uber Speeds 2019", 
                 descriptions=descriptions)
 ```
 

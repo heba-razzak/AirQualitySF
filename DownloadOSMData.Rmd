@@ -49,8 +49,6 @@ mapview(grid_sf)
 ```{r, download-road-grid, eval=FALSE}
 # Loop through each location to get the bounding box and OSM data
 for (i in 1:length(grid)) {
-  print(i)
-  
   output_name <- paste0('grid',i)
   
   osm <- opq(bbox = grid[i]) %>%
@@ -90,14 +88,14 @@ for (i in 1:length(grid)) {
   sf_obj <- st_as_sf(selected_columns)
   
   # Save the sf object as a shapefile
-  st_write(sf_obj, paste0(output_name, "_roads_osm.shp"), driver = "GPKG", append=FALSE)
+  st_write(sf_obj, paste0(output_name, "_roads_osm.gpkg"), driver = "GPKG", append=FALSE)
 }
 ```
 
 ## Read each grid roads and save to one file
 ```{r, save-road-grid-to-one-file, eval=FALSE}
 # Get a list of file paths
-file_paths <- list.files(pattern = "^grid.*_roads_osm\\.shp$", full.names = TRUE)
+file_paths <- list.files(pattern = "^grid.*_roads_osm\\.gpkg$", full.names = TRUE)
 
 # Read all shapefiles into a list
 sf_list <- lapply(file_paths, st_read)
@@ -105,11 +103,8 @@ sf_list <- lapply(file_paths, st_read)
 # Merge the spatial objects
 merged_sf <- do.call(rbind, sf_list)
 
-# # Remove duplicates based on the 'osm_id' column
-# merged_sf <- merged_sf %>% distinct(osm_id, .keep_all = TRUE)
-
 # Write the merged spatial object to a new shapefile
-st_write(merged_sf, "sanfrangrid_roads_osm.shp", driver = "GPKG", append=FALSE)
+st_write(merged_sf, "sanfrangrid_roads_osm.gpkg", driver = "GPKG", append=FALSE)
 ```
 
 # Download buildings for each grid cell
@@ -168,9 +163,6 @@ sf_list <- lapply(file_paths, st_read)
 
 # Merge the spatial objects
 merged_sf <- do.call(rbind, sf_list)
-
-# # Remove duplicates based on the 'osm_id' column
-# merged_sf <- merged_sf %>% distinct(osm_id, .keep_all = TRUE)
 
 # Write the merged spatial object to a new shapefile
 st_write(merged_sf, "sanfrangrid_buildings_osm.gpkg", driver = "GPKG", append=FALSE)
@@ -231,7 +223,7 @@ st_write(merged_sf, "sanfrangrid_trees_osm.gpkg", driver = "GPKG", append=FALSE)
 ## Read merged osm files
 ```{r, read-buildings-roads-trees, message=FALSE, warning=FALSE}
 # read roads file
-sanfrangrid_roads <- st_read("sanfrangrid_roads_osm.shp", quiet = TRUE)
+sanfrangrid_roads <- st_read("sanfrangrid_roads_osm.gpkg", quiet = TRUE)
 
 # read buildings file
 sanfrangrid_buildings <- st_read("sanfrangrid_buildings_osm.gpkg", quiet = TRUE)
@@ -263,7 +255,7 @@ rm(list = ls())
 # Read roads, buildings, trees for San Fran city (cell 238)
 ```{r read-cell-238-files, message=FALSE, warning=FALSE}
 # read roads file
-sanfrancell_roads <- st_read("grid238_roads_osm.shp", quiet = TRUE)
+sanfrancell_roads <- st_read("grid238_roads_osm.gpkg", quiet = TRUE)
 
 # read buildings file
 sanfrancell_buildings <- st_read("grid238_buildings_osm.gpkg", quiet = TRUE)

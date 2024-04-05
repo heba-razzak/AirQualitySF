@@ -25,7 +25,6 @@ library(getPurpleairApiHistoryV2)
 
 # Download purple air sensor id, lat, lon, date created, last seen
 ```{r, download-purpleair-sensors}
-
 pa <- getPurpleairSensors(apiReadKey = auth_key)
 
 # CRS (coordinate reference system)
@@ -33,8 +32,13 @@ crs = 4326
 
 # Convert the PurpleAir data frame to an sf object
 pa <- pa %>% na.omit() 
-dt <- st_as_sf(pa, coords=c("longitude", "latitude"), crs = crs)
-head(dt)
+pa_sf <- st_as_sf(pa, coords=c("longitude", "latitude"), crs = crs)
+head(pa_sf)
+
+# Save PurpleAir sensors shapefile (sensor index & location)
+pa_sensors <- pa %>% select(sensor_index, latitude, longitude)
+pa_sensors_sf <- st_as_sf(pa_sensors, coords=c("longitude", "latitude"), crs = crs)
+st_write(pa_sensors_sf, "purpleair_sensors.gpkg", driver = "GPKG", append=FALSE)
 ```
 
 # Get purple air sensors in san fran area (using bounding box)
@@ -50,7 +54,7 @@ crs = 4326
 st_crs(bbox_sf) <- crs
 
 # intersection of purple air sensors and bounding box
-purpleairs_sf <- st_intersection(dt, bbox_sf)
+purpleairs_sf <- st_intersection(pa_sf, bbox_sf)
 
 # interactive map
 mapview(purpleairs_sf)
