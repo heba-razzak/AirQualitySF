@@ -14,6 +14,27 @@ Data Dictionary
 | maxspeed | character      | 1,010,529 | 93.16% |        33 | Maximum speed                        |
 | geom     | sfc_LINESTRING |         0 |  0.00% | 1,064,430 | Geometry information                 |
 
+## **OSM Buildings**
+
+**Number of rows:** `2,652,364`
+
+| Variable | Type        |        NA |    %NA |    Unique | Description                                       |
+|:---------|:------------|----------:|-------:|----------:|:--------------------------------------------------|
+| osm_id   | character   |         0 |  0.00% | 2,642,914 | Unique Identifier from OpenStreetMap              |
+| name     | character   | 2,619,317 | 98.75% |    23,862 | Name of the entity                                |
+| building | character   |    24,077 |  0.91% |       217 | Type of Building (when unspecified, building=yes) |
+| amenity  | character   | 2,639,298 | 99.51% |       131 | For tagging building facilities                   |
+| geom     | sfc_POLYGON |         0 |  0.00% | 2,642,910 | Geometry information                              |
+
+## **OSM Trees**
+
+**Number of rows:** `91,075`
+
+| Variable | Type      |  NA |   %NA | Unique | Description                          |
+|:---------|:----------|----:|------:|-------:|:-------------------------------------|
+| osm_id   | character |   0 | 0.00% | 91,073 | Unique Identifier from OpenStreetMap |
+| geom     | sfc_POINT |   0 | 0.00% | 90,965 | Geometry information                 |
+
 ## **PurpleAir Sensors**
 
 **Number of rows:** `25,416`

@@ -50,13 +50,14 @@ new_bbox_sf <- st_buffer(bbox_sf, 25000)
 ```{r, stations-map, eval=TRUE}
 # get intersection of buffer with stations
 stations_within_bbox <- st_intersection(stations_sf, new_bbox_sf)
+st_write(stations_within_bbox, "weather_stations.gpkg", driver = "GPKG", append=FALSE)
 
 # Plot the intersection
 mapview(stations_within_bbox)
 ```
 
 ## Download weather data for each station for specified data range
-```{r, download-weather, warning=FALSE, eval=TRUE}
+```{r, download-weather, warning=FALSE, eval=FALSE}
 # Initialize empty dataframe to store weather measures for all stations
 measures_df <- data.frame()
 
@@ -92,8 +93,8 @@ for (id in stations_within_bbox$id) {
   
   # Add to measures_df
   measures_df <- rbind(measures_df, summary_df)
-  
-  # Save to CSV file
-  write.csv(measures_df, file = paste0("weather.csv"), row.names = FALSE)
 }
+
+# Save to CSV file
+write.csv(measures_df, file = paste0("weather.csv"), row.names = FALSE)
 ```

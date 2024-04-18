@@ -287,6 +287,10 @@ simplified_buildings <- st_simplify(sanfrancell_buildings, dTolerance = 0.001)
 mapview(simplified_buildings, map.types="CartoDB.Positron", layer.name = "Buildings", zcol = "building")
 ```
 
+```{r, mapview-buildings-amenity, echo=FALSE, eval=FALSE}
+mapview(simplified_buildings, map.types="CartoDB.Positron", layer.name = "Amenity", zcol = "amenity")
+```
+
 ## Map of San Fran trees
 ```{r, mapview-trees}
 mapview(sanfrancell_trees, col.regions = "green", legend = FALSE, layer.name = "Trees")

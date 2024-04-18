@@ -8,21 +8,17 @@ weather_directory <- readr::read_file("inputs/weather_directory.txt")
 osm_directory <- readr::read_file("inputs/osm_directory.txt")
 purpleair_directory <- readr::read_file("inputs/purpleair_directory.txt")
 uber_directory <- readr::read_file("inputs/uber_directory.txt")
-auth_key <- readr::read_file("inputs/purpleair_key.txt")
+preprocessing_directory <- readr::read_file("inputs/preprocessing_directory.txt")
 ```
 
 ## Load required libraries
 ```{r, load-libraries, message = FALSE, warning = FALSE}
 library(dplyr) # For data manipulation
 library(data.table) # Faster than dataframes (for big files)
-# library(ggplot2) # For visualizing data
-# library(rjson) # For working with JSON data
-# library(httr) # For making HTTP requests
 library(sf) # For working with spatial data
-# library(osmdata) # Open Street Map
-# library(mapview) # For interactive maps
-# library(tidycensus) # Census data
+library(mapview) # For interactive maps
 library(lubridate) # Dates
+library(purrr) 
 ```
 
 ### Coordinate reference system (CRS) that will be used for all shapefiles
@@ -32,6 +28,293 @@ library(lubridate) # Dates
 crs = 4326
 ```
 
+## Read files
+```{r, read-files, eval=FALSE}
+purpleair_data <- fread(paste0(purpleair_directory,"/purple_air_sanfran_2018-2019.csv"))
+purpleair_sensors <- st_read(paste0(purpleair_directory, "/purpleair_sensors.gpkg"))
+weather_stations <- st_read(paste0(weather_directory, "/weather_stations.gpkg"))
+
+osm_roads <- st_read(paste0(osm_directory, "/sanfrangrid_roads_osm.gpkg"), quiet = TRUE)
+osm_buildings <- st_read(paste0(osm_directory, "/sanfrangrid_buildings_osm.gpkg"), quiet = TRUE)
+osm_trees <- st_read(paste0(osm_directory, "/sanfrangrid_trees_osm.gpkg"), quiet = TRUE)
+
+# weather <- fread(paste0(weather_directory, "/weather.csv"))
+# uber_2018 <- fread(paste0(uber_directory, "/uber-2018.csv"))
+# uber_2019 <- fread(paste0(uber_directory, "/uber-2019.csv"))
+```
+
+# PurpleAir Sensors & Nearest Weather Station
+
+## Filter PurpleAir sensors
+```{r, filter_pa_sensors}
+# filter purpleair_sensors for our selected data
+filtered_sensors <- purpleair_sensors %>% 
+  filter(sensor_index %in% unique(purpleair_data$sensor_index))
+```
+
+## Nearest Weather Stations
+```{r, nearest-weather-station}
+# Find the index of the nearest weather station for each sensor
+nearest_station_index <- st_nearest_feature(filtered_sensors, weather_stations)
+
+# Add nearest weather stations to purpleair data frame
+filtered_sensors$weatherstation <- weather_stations$id[nearest_station_index]
+
+# filtered_sensors: LINKS PA - WEATHER
+```
+
+## Map PurpleAir Sensors and nearest Weather Stations
+```{r, map-pa-weather}
+# Convert weather stations to a data frame
+weather_stations_df <- as.data.frame(st_coordinates(weather_stations))
+colnames(weather_stations_df) <- c("wlon", "wlat")
+weather_stations_df$weatherstation <- weather_stations$id
+
+# Convert filtered sensors to a data frame
+filtered_sensors_df <- as.data.frame(st_coordinates(filtered_sensors))
+colnames(filtered_sensors_df) <- c("plon", "plat")
+filtered_sensors_df$sensor_index <- filtered_sensors$sensor_index
+filtered_sensors_df$weatherstation <- filtered_sensors$weatherstation
+
+# Join filtered sensors and weather stations data frames
+result <- left_join(filtered_sensors_df, weather_stations_df, by = "weatherstation")
+
+# Connect sensors with closest weather stations with lines
+sensor_coords <- result[, c("plon", "plat")]
+names(sensor_coords) <- c("long", "lat")
+station_coords <- result[, c("wlon", "wlat")]
+names(station_coords) <- c("long", "lat")
+
+# Add lines as geometry
+result$geometry <- do.call("c", lapply(seq(nrow(sensor_coords)), function(i) {
+  st_sfc(st_linestring(as.matrix(rbind(sensor_coords[i, ], station_coords[i, ]))), crs = 4326)
+}))
+
+# Convert the result to a simple feature object
+closest_station <- st_as_sf(result)
+
+# Create map views
+m1 <- mapview(filtered_sensors, col.regions = "purple", cex = 1)
+m2 <- mapview(weather_stations, col.regions = "darkgreen", cex = 5)
+m3 <- mapview(closest_station, color = "pink")
+
+# Combine map views
+m1 + m2 + m3
+```
+
+# PurpleAir Sensors and OSM
+## Create Buffers around Purple Air Sensors
+```{r, pa-buffers, eval=FALSE}
+# buffer radius in meters
+buffer = 500
+purpleairs_buffers <- st_buffer(filtered_sensors, dist=buffer)
+```
+
+```{r}
+# intersect keeps original geometry of item, just returns which items overlap
+# intersection cuts geometry to be contained by buffer zone (only includes overlapping parts)
+# intersection returns both objects joined
+
+# function to get intersections using st_intersects
+intersection_osm_buffers <- function(purpleairs_buffers, osm_data) {
+  osm_intersections <- st_intersects(osm_data, purpleairs_buffers)
+  osm_filtered <- filter(osm_data, purrr::map_lgl(osm_intersections, ~!purrr::is_empty(.x)))
+  intersections <- st_intersects(purpleairs_buffers, osm_filtered)
+
+  result <- list()
+  for (i in seq_along(intersections)) {
+    osm_i <- intersections[[i]]
+    for (o in osm_i) {
+      osm = osm_filtered[o,]
+      sensor = purpleairs_buffers[i,]
+      osm$sensor_index <- sensor$sensor_index
+      result <- c(result, list(osm))
+    }
+  }
+  result_df <- do.call(rbind, result)
+  return(result_df)
+}
+
+# roads & purple air intersections
+check_time <- system.time({
+  roads <- intersection_osm_buffers(purpleairs_buffers, osm_roads)
+})
+st_write(roads, paste0(preprocessing_directory, "/roads.gpkg"), driver = "GPKG", append=FALSE)
+
+# trees & purple air intersections
+check_time <- system.time({
+  trees <- intersection_osm_buffers(purpleairs_buffers, osm_trees)
+})
+st_write(trees, paste0(preprocessing_directory, "/trees.gpkg"), driver = "GPKG", append=FALSE)
+
+# buildings & purple air intersections
+check_time <- system.time({
+  buildings <- intersection_osm_buffers(purpleairs_buffers, osm_buildings)
+})
+st_write(buildings, paste0(preprocessing_directory, "/buildings.gpkg"), driver = "GPKG", append=FALSE)
+
+#######
+#######
+#######
+
+nrow(osm_roads)
+nrow(roads)
+
+#######
+check_time <- system.time({
+  roads_intersections <- st_intersects(osm_roads, purpleairs_buffers)
+  roads_filtered <- filter(osm_roads, purrr::map_lgl(roads_intersections, ~!purrr::is_empty(.x)))
+})
+roads_intersections <- st_intersects(osm_roads, purpleairs_buffers)
+roads_filtered <- filter(osm_roads, purrr::map_lgl(roads_intersections, ~!purrr::is_empty(.x)))
+nrow(osm_roads)
+nrow(roads_filtered)
+check_time
+
+
+# roads <- st_intersection(roads_filtered, purpleairs_buffers)
+
+# buildings & purple air intersections
+buildings_intersections <- st_intersects(osm_buildings, purpleairs_buffers)
+buildings_filtered <- filter(osm_buildings, purrr::map_lgl(buildings_intersections, ~!purrr::is_empty(.x)))
+# buildings <- st_intersection(buildings_filtered, purpleairs_buffers)
+
+# trees & purple air intersections
+trees_intersections <- st_intersects(osm_trees, purpleairs_buffers)
+trees_filtered <- filter(osm_trees, purrr::map_lgl(trees_intersections, ~!purrr::is_empty(.x)))
+# trees <- st_intersection(trees_filtered, purpleairs_buffers)
+trees
+```
+
+```{r}
+crs = 4326
+bbox <- c(xmin = -122.47, ymin = 37.76, xmax = -122.44, ymax = 37.74)
+bbox_polygon <- st_as_sfc(st_bbox(bbox))
+st_crs(bbox_polygon) <- crs
+purpleairs_buffers2 <- st_intersection(purpleairs_buffers, bbox_polygon)
+mapview(purpleairs_buffers2)
+
+intersections2 <- st_intersects(osm_buildings, bbox_polygon)
+buildings2 <- filter(osm_buildings, purrr::map_lgl(intersections2, ~!purrr::is_empty(.x)))
+
+# im trying to use st_intersects to return the joined df of intersections
+
+# METHOD 1
+buildings_intersections2 <- st_intersects(purpleairs_buffers2, buildings2)
+
+result <- list()
+for (i in seq_along(buildings_intersections2)) {
+  buildings_i <- buildings_intersections2[[i]]
+  for (b in buildings_i) {
+    building = buildings2[b,]
+    sensor = purpleairs_buffers2[i,]
+    building$sensor_index <- sensor$sensor_index
+    result <- c(result, list(building))
+  }
+}
+result_df <- do.call(rbind, result)
+
+
+
+
+
+
+result2 <- st_intersection(buildings2, purpleairs_buffers2)
+
+buildings_intersections2 <- st_intersects(purpleairs_buffers2, buildings2)
+buildings_filtered2 <- filter(osm_buildings2, purrr::map_lgl(buildings_intersections2, ~!purrr::is_empty(.x)))
+```
+
+```{r}
+mapview(purpleairs_buffers2)
+
+x1 <- result_2 %>% filter(sensor_index == 37725)
+x2 <- result_df %>% filter(sensor_index == 37725)
+```
+
+```{r}
+# Measure execution time for METHOD 1
+method1_time <- system.time({
+  buildings_intersections2 <- st_intersects(purpleairs_buffers2, buildings2)
+  result <- list()
+  for (i in seq_along(buildings_intersections2)) {
+    buildings_i <- buildings_intersections2[[i]]
+    for (b in buildings_i) {
+      building <- buildings2[b, ]
+      sensor <- purpleairs_buffers2[i, ]
+      building$sensor_index <- sensor$sensor_index
+      result <- c(result, list(building))
+    }
+  }
+  result_df <- do.call(rbind, result)
+})
+
+# Measure execution time for METHOD 2
+method2_time <- system.time({
+  result_2 <- st_intersection(purpleairs_buffers2, buildings2)
+})
+
+# Compare execution times
+method1_time
+method2_time
+```
+
+```{r}
+n <- 10000
+purpleair_roads <- list()
+
+for (i in 1:ceiling(nrow(roads_filtered) / n)) {
+  cat("\nIteration", i, "of", ceiling(nrow(roads_filtered) / n), "\n")
+  start_idx <- (i - 1) * n + 1
+  end_idx <- min(i * n, nrow(roads_filtered))
+
+  purpleair_roads_i <- st_intersection(roads_filtered[start_idx:end_idx, ], purpleairs_buffers)
+
+  if (nrow(purpleair_roads_i) > 0)  {
+    # Add the results to the list
+    purpleair_roads[[i]] <- purpleair_roads_i
+  }
+
+}
+
+purpleair_roads <- do.call(rbind, purpleair_roads)
+
+
+print(nrow(roads_filtered))
+print(nrow(osm_roads))
+```
+
+### intersection method
+```{r, eval=FALSE}
+test = osm_buildings[770:780,]
+st_is_valid(osm_buildings[770:780,])
+
+is_valid_buildings <- st_is_valid(osm_buildings)
+valid_buildings <- buildings[is_valid_buildings, ]
+valid_buildings <- st_make_valid(valid_buildings)
+valid_buildings <- st_transform(valid_buildings, crs=crs)
+purpleair_buildings_i <- st_intersection(valid_buildings[start_idx:end_idx, ], purpleairs_buffers)
+```
+
+
+
+
+# Get area of buildings for each PA sensor
+```{}
+path = '/Users/heba/Desktop/Uni/Lim Lab/uber_purpleair/'
+purpleair_buildings <- st_read(paste0(path,"purpleair_buildings.shp"))
+
+purpleair_building_areas <- purpleair_buildings %>%
+  group_by(sensr_d, type) %>%
+  summarize(total_area = sum(st_area(geometry)))
+
+st_write(purpleair_building_areas, "/Users/heba/Desktop/Uni/Lim Lab/uber_purpleair/purpleair_building_areas.shp", append=FALSE)
+
+```
+
+########################################################
+########################################################
+########################################################
 # Input dates for the month you want
 ```{}
 year = 2019
@@ -49,16 +332,91 @@ purpleairformat <- paste0(format(first_day, "%Y-%m-01"), "_", format(last_day, "
 uberformat <- sprintf("%d-%d", year, month)
 ```
 
-# read files
-```{r, read-files, eval=FALSE}
-purpleair_data <- fread(paste0(file_directory,"/purple_air_sanfran_2018-2019.csv"))
-purpleair_sensors <- st_read(paste0(purpleair_directory, "/purpleair_sensors.gpkg"))
-uber_2018 <- fread(paste0(uber_directory, "/uber-2018.csv"))
-uber_2019 <- fread(paste0(uber_directory, "/uber-2019.csv"))
-osm_roads <- st_read(paste0(osm_directory, "/sanfrangrid_roads_osm.gpkg"), quiet = TRUE)
-osm_buildings <- st_read(paste0(osm_directory, "/sanfrangrid_buildings_osm.gpkg"), quiet = TRUE)
-osm_trees <- st_read(paste0(osm_directory, "/sanfrangrid_trees_osm.gpkg"), quiet = TRUE)
+```{r}
+# nrow(osm_buildings) : 2,652,364
+building_counts <- osm_buildings %>% 
+  count(building) %>% 
+  arrange(desc(n))
+
+building_counts
 ```
+
+
+```{r}
+
+```
+
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+# Convert weather data frame to an sf object
+weather_sf <- st_as_sf(weather, coords=c("lon", "lat"), crs = crs)
+```
+
+
+#########################################
+# Buildings and PurpleAir Intersections #
+#########################################
+
+```{r, eval=FALSE}
+path = '/Users/heba/Desktop/Uni/Lim Lab/uber_purpleair/'
+purpleairs_buffers <- st_read(paste0(path,'purpleairs_buffers.shp'))
+path = '/Users/heba/Desktop/Uni/Lim Lab/uber_purpleair/shape/'
+buildings <- st_read(paste0(path,"buildings.shp"))
+
+# buildings & purple air intersections
+is_valid_buildings <- st_is_valid(buildings)
+valid_buildings <- buildings[is_valid_buildings, ]
+valid_buildings <- st_make_valid(valid_buildings)
+valid_buildings <- st_transform(valid_buildings, crs=crs)
+
+
+n <- 10000
+purpleair_buildings <- list()
+
+for (i in 1:ceiling(nrow(valid_buildings) / n)) {
+  cat("\nIteration", i, "of", ceiling(nrow(valid_buildings) / n), "\n")
+  start_idx <- (i - 1) * n + 1
+  end_idx <- min(i * n, nrow(valid_buildings))
+
+  purpleair_buildings_i <- st_intersection(valid_buildings[start_idx:end_idx, ], purpleairs_buffers)
+
+  if (nrow(purpleair_buildings_i) > 0)  {
+    # Add the results to the list
+    purpleair_buildings[[i]] <- purpleair_buildings_i
+  }
+
+}
+
+purpleair_buildings <- do.call(rbind, purpleair_buildings)
+# cant save it to shapefile if osm_id is numeric (??)
+purpleair_buildings$osm_id <- as.character(purpleair_buildings$osm_id)
+
+st_write(purpleair_buildings, "/Users/heba/Desktop/Uni/Lim Lab/uber_purpleair/purpleair_buildings.shp", append=FALSE)
+```
+
+# Get area of buildings for each PA sensor
+```{}
+path = '/Users/heba/Desktop/Uni/Lim Lab/uber_purpleair/'
+purpleair_buildings <- st_read(paste0(path,"purpleair_buildings.shp"))
+
+purpleair_building_areas <- purpleair_buildings %>%
+  group_by(sensr_d, type) %>%
+  summarize(total_area = sum(st_area(geometry)))
+
+st_write(purpleair_building_areas, "/Users/heba/Desktop/Uni/Lim Lab/uber_purpleair/purpleair_building_areas.shp", append=FALSE)
+
+```
+
+
+
 
 ```{r}
 
@@ -105,16 +463,6 @@ avg_pm25$AQI <- cut(avg_pm25$avg_pm25, breaks = intervals, labels = AQI, include
 # Plot the average PM2.5 for each sensor with custom colors
 map <- mapview(avg_pm25, zcol = "AQI", col.regions = custom_colors, legend = TRUE)
 map
-```
-
-############################################
-# Create Buffers around Purple Air Sensors #
-############################################
-```{r, eval=FALSE}
-
-# buffer radius in meters
-buffer = 500
-purpleairs_buffers <- st_buffer(purpleair_sf, dist=buffer)
 ```
 
 ############################################
@@ -188,59 +536,6 @@ purpleair_road_length <- purpleair_uber_roads %>%
 st_write(purpleair_road_length, "/Users/heba/Desktop/Uni/Lim Lab/uber_purpleair/purpleair_road_length.shp", append=FALSE)
 ```
 
-#########################################
-# Buildings and PurpleAir Intersections #
-#########################################
-
-```{}
-path = '/Users/heba/Desktop/Uni/Lim Lab/uber_purpleair/'
-purpleairs_buffers <- st_read(paste0(path,'purpleairs_buffers.shp'))
-path = '/Users/heba/Desktop/Uni/Lim Lab/uber_purpleair/shape/'
-buildings <- st_read(paste0(path,"buildings.shp"))
-
-# buildings & purple air intersections
-is_valid_buildings <- st_is_valid(buildings)
-valid_buildings <- buildings[is_valid_buildings, ]
-valid_buildings <- st_make_valid(valid_buildings)
-valid_buildings <- st_transform(valid_buildings, crs=crs)
-
-
-n <- 10000
-purpleair_buildings <- list()
-
-for (i in 1:ceiling(nrow(valid_buildings) / n)) {
-  cat("\nIteration", i, "of", ceiling(nrow(valid_buildings) / n), "\n")
-  start_idx <- (i - 1) * n + 1
-  end_idx <- min(i * n, nrow(valid_buildings))
-
-  purpleair_buildings_i <- st_intersection(valid_buildings[start_idx:end_idx, ], purpleairs_buffers)
-
-  if (nrow(purpleair_buildings_i) > 0)  {
-    # Add the results to the list
-    purpleair_buildings[[i]] <- purpleair_buildings_i
-  }
-
-}
-
-purpleair_buildings <- do.call(rbind, purpleair_buildings)
-# cant save it to shapefile if osm_id is numeric (??)
-purpleair_buildings$osm_id <- as.character(purpleair_buildings$osm_id)
-
-st_write(purpleair_buildings, "/Users/heba/Desktop/Uni/Lim Lab/uber_purpleair/purpleair_buildings.shp", append=FALSE)
-```
-
-# Get area of buildings for each PA sensor
-```{}
-path = '/Users/heba/Desktop/Uni/Lim Lab/uber_purpleair/'
-purpleair_buildings <- st_read(paste0(path,"purpleair_buildings.shp"))
-
-purpleair_building_areas <- purpleair_buildings %>%
-  group_by(sensr_d, type) %>%
-  summarize(total_area = sum(st_area(geometry)))
-
-st_write(purpleair_building_areas, "/Users/heba/Desktop/Uni/Lim Lab/uber_purpleair/purpleair_building_areas.shp", append=FALSE)
-
-```
 
 #########################################
 # Uber congestion and free flow speeds #

@@ -148,7 +148,6 @@ for (f in file_paths) {
 write.csv(fulldata, file = paste0("purple_air_sanfran_", from, "_", to, ".csv"), row.names = FALSE)
 ```
 
-
 ```{r, monthly-sensors}
 # Read purple air data (get filename for full data then read it)
 file_paths <- list.files(file_directory, pattern = "purple_air_sanfran_.*.csv", full.names = FALSE)

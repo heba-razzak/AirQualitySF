@@ -18,10 +18,10 @@ library(createDataDict)
 file_directory = readr::read_file("inputs/osm_directory.txt")
 
 # read roads file
-sanfrancell_roads <- st_read(paste0(file_directory,"/sanfrangrid_roads_osm.gpkg"), quiet = TRUE)
+sanfran_roads <- st_read(paste0(file_directory,"/sanfrangrid_roads_osm.gpkg"), quiet = TRUE)
 
 # get dataframe for descriptions
-descriptions <- descriptions_df(sanfrancell_roads)
+descriptions <- descriptions_df(sanfran_roads)
 
 # update descriptions dataframe
 descriptions <- update_description(descriptions,
@@ -33,7 +33,48 @@ descriptions <- update_description(descriptions,
                                      "Maximum speed",
                                      "Geometry information"))
 # Print data dictionary
-print_data_dict(sanfrancell_roads, data_title="OSM Roads", descriptions=descriptions)
+print_data_dict(sanfran_roads, data_title="OSM Roads", descriptions=descriptions)
+```
+
+```{r, read-osm-buildings, message=FALSE, warning=FALSE, echo=FALSE, eval=TRUE}
+# osm file directory
+file_directory = readr::read_file("inputs/osm_directory.txt")
+
+# read roads file
+sanfran_buildings <- st_read(paste0(file_directory,"/sanfrangrid_buildings_osm.gpkg"), quiet = TRUE)
+
+# get dataframe for descriptions
+descriptions <- descriptions_df(sanfran_buildings)
+
+# update descriptions dataframe
+descriptions <- update_description(descriptions,
+                                   c("osm_id", "name", "building", "amenity", "geom"),
+                                   c("Unique Identifier from OpenStreetMap",
+                                     "Name of the entity",
+                                     "Type of Building (when unspecified, building=yes)",
+                                     "For tagging building facilities",
+                                     "Geometry information"))
+# Print data dictionary
+print_data_dict(sanfran_buildings, data_title="OSM Buildings", descriptions=descriptions)
+```
+
+```{r, read-osm-trees, message=FALSE, warning=FALSE, echo=FALSE, eval=TRUE}
+# osm file directory
+file_directory = readr::read_file("inputs/osm_directory.txt")
+
+# read roads file
+sanfran_trees <- st_read(paste0(file_directory,"/sanfrangrid_trees_osm.gpkg"), quiet = TRUE)
+
+# get dataframe for descriptions
+descriptions <- descriptions_df(sanfran_trees)
+
+# update descriptions dataframe
+descriptions <- update_description(descriptions,
+                                   c("osm_id", "geom"),
+                                   c("Unique Identifier from OpenStreetMap",
+                                     "Geometry information"))
+# Print data dictionary
+print_data_dict(sanfran_trees, data_title="OSM Trees", descriptions=descriptions)
 ```
 
 ```{r, purpleair-sensors, echo=FALSE, eval=TRUE}

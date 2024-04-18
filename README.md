@@ -32,6 +32,14 @@ To achieve this goal, the project integrates and analyzes diverse datasets sourc
 
     Clean PurpleAir data points, ensuring data quality by filtering out inconsistencies. Calculate congestion ratios from uber speeds data. Creates buffer around each purpleair sensor, finds intersections with other datasets and prepares for use in model.
 
+-   [Data Preprocessing1](DataPreprocessing1.md): Link PurpleAir sensors with nearest weather station
+
+    Link PurpleAir sensors with nearest weather station and visualize on map.
+    
+-   [Data Preprocessing2](DataPreprocessing2.md): Link PurpleAir sensors with OSM data
+
+    Creates buffer around each purpleair sensor, finds intersections with OSM roads, buildings and trees, then visualize on map.
+
 -   [Model Building](ModelBuilding.md): Developing the model for predicting PM2.5 concentrations.
 
     Trains a random forest model for predicting PM2.5 concentrations and evaluates the model's performance using metrics like Mean Absolute Error (MAE) and R-squared.
