@@ -1,0 +1,79 @@
+---
+title: "Feature Engineering"
+output: github_document
+---
+
+# Creating new features
+Calculate building areas, road lengths, and number of trees surrounding PurpleAir sensors. Create new columns to represent temporal aspects such as day, hour, and weekend.
+
+```{r setup, include=FALSE}
+preprocessing_directory <- readr::read_file("inputs/preprocessing_directory.txt")
+```
+
+## Load required libraries
+```{r, load-libraries, message = FALSE, warning = FALSE}
+library(dplyr) # For data manipulation
+library(data.table) # Faster than dataframes (for big files)
+library(sf) # For working with spatial data
+# library(mapview) # For interactive maps
+library(lubridate) # Dates
+# library(purrr) 
+```
+
+## Read files
+```{r, read-files, eval=FALSE}
+purpleair_data <- fread(paste0(preprocessing_directory,"/purpleair_2018-2019.csv"))
+purpleair_sensors <- st_read(paste0(purpleair_directory, "/purpleair_sensors.gpkg"), quiet = TRUE)
+# osm_roads <- st_read(paste0(osm_directory, "/sanfrangrid_roads_osm.gpkg"), quiet = TRUE)
+```
+
+# filter temps to year and month and create datetime column
+```{r filter temps}
+temps <- temps %>% mutate(Date = ymd(Date)) %>% filter(year(Date) == year, month(Date) == month) %>%
+  mutate(datetime = ymd_hms(paste(Date, Time))) %>%
+  select(datetime, everything(), -Date, -Time)
+```
+
+# Get area of buildings for each PA sensor
+```{}
+path = '/Users/heba/Desktop/Uni/Lim Lab/uber_purpleair/'
+purpleair_buildings <- st_read(paste0(path,"purpleair_buildings.shp"))
+
+purpleair_building_areas <- purpleair_buildings %>%
+  group_by(sensr_d, type) %>%
+  summarize(total_area = sum(st_area(geometry)))
+
+st_write(purpleair_building_areas, "/Users/heba/Desktop/Uni/Lim Lab/uber_purpleair/purpleair_building_areas.shp", append=FALSE)
+
+```
+
+# Road lengths
+```{r, eval=FALSE}
+path = '/Users/heba/Desktop/Uni/Lim Lab/uber_purpleair/'
+purpleair_uber_roads <- st_read(paste0(path,'purpleair_uber_roads.shp'))
+
+purpleair_road_length <- purpleair_uber_roads %>%
+  group_by(sensr_d, type) %>%
+  summarize(road_length = sum(st_length(geometry)))
+
+st_write(purpleair_road_length, "/Users/heba/Desktop/Uni/Lim Lab/uber_purpleair/purpleair_road_length.shp", append=FALSE)
+```
+
+
+# Create date variables for prediction
+```{r}
+result$local_timestamp <- with_tz(result$time_stamp, tzone = "America/Los_Angeles")
+
+# # no holidays in june so it doesnt make sense to use for this month
+# result$local_date <- as.Date(result$local_timestamp)
+# result$is_holiday <- result$local_date %in% as.Date(holidays)
+
+result$day_of_week <- wday(result$local_timestamp)
+result$hour <- hour(result$local_timestamp)
+result$day <- day(result$local_timestamp)
+result$month <- month(result$local_timestamp)
+result$year <- year(result$local_timestamp)
+result$is_weekend <- ifelse(result$day_of_week %in% c(6, 7), 1, 0) # 6 and 7 represent the weekend
+
+head(result)
+```

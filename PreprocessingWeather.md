@@ -1,4 +1,4 @@
-Data Preprocessing
+Preprocessing Weather
 ================
 
 # PurpleAir Sensors & Nearest Weather Station
@@ -44,12 +44,21 @@ st_write(filtered_sensors,
          driver = "GPKG", append=FALSE)
 ```
 
-    ## Deleting layer `pasensors_weatherstations' using driver `GPKG'
-    ## Writing layer `pasensors_weatherstations' to data source 
-    ##   `/Users/heba/Documents/GitHub/AirQualitySF/Preprocessing/pasensors_weatherstations.gpkg' using driver `GPKG'
-    ## Writing 778 features with 2 fields and geometry type Point.
-
 ## Map PurpleAir Sensors and nearest Weather Stations
+
+``` r
+weather_stations <- st_read(paste0(weather_directory, "/weather_stations.gpkg"), quiet = TRUE)
+filtered_sensors <- st_read(paste0(preprocessing_directory,"/pasensors_weatherstations.gpkg"))
+```
+
+    ## Reading layer `pasensors_weatherstations' from data source 
+    ##   `/Users/heba/Documents/GitHub/AirQualitySF/Preprocessing/pasensors_weatherstations.gpkg' 
+    ##   using driver `GPKG'
+    ## Simple feature collection with 778 features and 2 fields
+    ## Geometry type: POINT
+    ## Dimension:     XY
+    ## Bounding box:  xmin: -123.3673 ymin: 36.92426 xmax: -121.0218 ymax: 38.99503
+    ## Geodetic CRS:  WGS 84
 
 ``` r
 # Convert weather stations to a data frame
@@ -80,7 +89,7 @@ result$geometry <- do.call("c", lapply(seq(nrow(sensor_coords)), function(i) {
 # Convert the result to a simple feature object
 closest_station <- st_as_sf(result)
 
-# Create map views
+# Create map views.   
 m1 <- mapview(filtered_sensors, col.regions = "purple", cex = 1)
 m2 <- mapview(weather_stations, col.regions = "darkgreen", cex = 5)
 m3 <- mapview(closest_station, color = "pink")
@@ -89,4 +98,4 @@ m3 <- mapview(closest_station, color = "pink")
 m1 + m2 + m3
 ```
 
-![](DataPreprocessing1_files/figure-gfm/map-pa-weather-1.png)<!-- -->
+![](PreprocessingWeather_files/figure-gfm/map-pa-weather-1.png)<!-- -->

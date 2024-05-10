@@ -1,4 +1,4 @@
-# lim-lab
+# AirQualitySF
 
 ## Overview
 
@@ -28,17 +28,29 @@ To achieve this goal, the project integrates and analyzes diverse datasets sourc
 
     Reading individual monthly Uber CSV files, selecting necessary columns, merging data from different files into one for each year, and verifying the correctness of the combined files.
 
--   [Data Preprocessing](DataPreprocessing.md): Prepare final dataset. Cleans and combines PurpleAir, Uber, OSM, and weather data.
-
-    Clean PurpleAir data points, ensuring data quality by filtering out inconsistencies. Calculate congestion ratios from uber speeds data. Creates buffer around each purpleair sensor, finds intersections with other datasets and prepares for use in model.
-
--   [Data Preprocessing1](DataPreprocessing1.md): Link PurpleAir sensors with nearest weather station
+-   [Preprocessing Weather](PreprocessingWeather.md): Link PurpleAir sensors with nearest weather station
 
     Link PurpleAir sensors with nearest weather station and visualize on map.
     
--   [Data Preprocessing2](DataPreprocessing2.md): Link PurpleAir sensors with OSM data
+-   [Preprocessing OSM](PreprocessingOSM.md): Link PurpleAir sensors with OpenStreetMap (OSM) data
 
-    Creates buffer around each purpleair sensor, finds intersections with OSM roads, buildings and trees, then visualize on map.
+    Creates buffer around each purpleair sensor, finds intersections with OSM roads, buildings and trees.
+
+-   [Preprocessing PurpleAir](PreprocessingPurpleAir.md): Clean PurpleAir data points
+
+    Clean PurpleAir data points, ensuring data quality by dealing with outliers and inconsistencies. Visualization of outliers. To be added: Check if there's a pattern of sensors failing after an inconsistency is detected.
+
+-   [Preprocessing Uber](PreprocessingUber.md): Calculate Free Flow Speeds and Congestion Ratio
+
+    Filter uber data near PurpleAir sensors. Calculate Free Flow Speeds and Congestion Ratio. Visualization of free flow speeds and traffic congestion.
+    
+-   [Feature Engineering](FeatureEngineering.md): Creating new features
+
+    Calculate building areas, road lengths, and number of trees surrounding PurpleAir sensors. Create new columns to represent temporal aspects such as day, hour, and weekend.
+
+-   [Data Integration](DataIntegration.md): Create final dataset
+
+    Integrating cleaned and processed data from various sources to create the final dataset.
 
 -   [Model Building](ModelBuilding.md): Developing the model for predicting PM2.5 concentrations.
 

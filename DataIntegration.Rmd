@@ -1,0 +1,197 @@
+---
+title: "Data Integration"
+output: github_document
+---
+
+# Create final dataset
+
+```{r setup, include=FALSE}
+osm_directory <- readr::read_file("inputs/osm_directory.txt")
+purpleair_directory <- readr::read_file("inputs/purpleair_directory.txt")
+preprocessing_directory <- readr::read_file("inputs/preprocessing_directory.txt")
+```
+
+## Load required libraries
+```{r, load-libraries, message = FALSE, warning = FALSE}
+library(dplyr) # For data manipulation
+library(data.table) # Faster than dataframes (for big files)
+library(sf) # For working with spatial data
+# library(mapview) # For interactive maps
+# library(lubridate) # Dates
+# library(purrr) 
+```
+
+## Read files
+```{r, read-files, eval=FALSE}
+purpleair_data <- fread(paste0(purpleair_directory,"/purple_air_sanfran_2018-2019.csv"))
+purpleair_sensors <- st_read(paste0(purpleair_directory, "/purpleair_sensors.gpkg"), quiet = TRUE)
+osm_roads <- st_read(paste0(osm_directory, "/sanfrangrid_roads_osm.gpkg"), quiet = TRUE)
+```
+
+```{r}
+# Convert weather data frame to an sf object
+weather_sf <- st_as_sf(weather, coords=c("lon", "lat"), crs = crs)
+```
+
+
+
+# Join PurpleAir Uber Temp OSM
+```{r Join PurpleAir Uber Temp OSM}
+# purpleair_uber_roads - "osm_id","name","type","sensr_d","dt_crtd","last_sn","geometry"
+# road_congestion_hourly - "osm_way_id","utc_timestamp","congestion_ratio_mean"
+# purpleair_road_length - "sensr_d","type","road_length","geometry"   
+# purpleair_building_areas - "sensr_d","type","total_area","geometry"  
+# purpleair - "time_stamp","pm1.0_atm","pm2.5_atm","pm2.5_atm_a","pm2.5_atm_b","sensor_id"
+# temps - "datetime","TemperatureFahrenheit","TemperatureCelsius"   
+
+purpleair2 <- purpleair %>% select(time_stamp,sensor_id,pm2.5_atm)
+temps2 <- temps %>% select(datetime,TemperatureFahrenheit)
+purpleair_building_areas2 <- st_drop_geometry(purpleair_building_areas) %>% select(sensr_d,type,total_area)
+purpleair_road_length2 <- st_drop_geometry(purpleair_road_length) %>% select(sensr_d,type,road_length = rd_lngt)
+# road_congestion_hourly # osm_way_id, utc_timestamp, congestion_ratio_mean
+purpleair_uber <- st_drop_geometry(purpleair_uber_roads) %>% select(sensr_d,osm_id)
+
+# pivot area by building type
+# purpleair_building_areas %>%
+#   group_by(sensr_d, type) %>%
+#   summarize(total_area = sum(total_area)) %>%
+#   pivot_wider(names_from = type, values_from = total_area, names_prefix = "area_")
+
+purpleair_building_areas3 <- purpleair_building_areas2 %>%
+  group_by(sensr_d) %>%
+  summarize(total_area = sum(total_area)) %>% ungroup()
+
+# pivot length by road type
+purpleair_road_length3 <- purpleair_road_length2 %>%
+  group_by(sensr_d, type) %>%
+  summarize(road_length = sum(road_length)) %>%
+  pivot_wider(names_from = type, values_from = road_length, names_prefix = "length_") %>% ungroup()
+
+purpleair_road_length4 <- purpleair_road_length2 %>%
+  group_by(sensr_d) %>%
+  summarize(road_length = sum(road_length)) %>% ungroup()
+
+pa_temp <- left_join(purpleair, temps, by = c("time_stamp" = "datetime"))
+pa_congestion <- left_join(purpleair_uber, road_congestion_hourly, by = c("osm_id" = "osm_way_id"))
+
+# check how i calculate this
+# alternative to getting the mean of mean
+pa_congestion <- pa_congestion %>% group_by(sensr_d, utc_timestamp) %>% summarize(mean_congestion = mean(congestion_ratio_mean)) %>% ungroup()
+
+result <- left_join(pa_temp, pa_congestion, by = c("time_stamp" = "utc_timestamp", "sensor_id" = "sensr_d"))
+result <- left_join(result, purpleair_building_areas3, by = c("sensor_id" = "sensr_d"))
+result <- left_join(result, purpleair_road_length3, by = c("sensor_id" = "sensr_d"))
+
+# head(result, 10)
+
+```
+
+
+# Analyze missing values
+```{r Analyze missing values}
+
+all_na_columns <- names(result)[colSums(is.na(result)) == nrow(result)]
+cat("columns with all NA:\n",all_na_columns)
+result <- result %>% dplyr::select(-all_of(all_na_columns))
+
+missing_count <- colSums(is.na(result))
+non_missing_count <- colSums(!is.na(result))
+
+data_quality_summary <- data.frame(
+  Column = colnames(result),
+  Status = factor(rep(c("Missing", "Non-Missing"), each = ncol(result))),
+  Count = c(missing_count, non_missing_count)
+)
+
+ggplot(data_quality_summary, aes(x = Column, fill = Status, y = Count)) +
+  geom_bar(stat = "identity", position = "stack") +
+  xlab("Column") +
+  ylab("Count") +
+  scale_fill_manual(values = c("Missing" = "red", "Non-Missing" = "green")) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+# Handle Missing Values
+```{r Handle Missing Values}
+# Since most missing values are lengths of roads
+# Fill missing "length" values with 0
+
+# column names starting with length
+cols_to_fill_na <- grep("^length_", names(result), value = TRUE)
+
+# Replace NA with 0 in selected columns
+result <- result %>%
+  mutate_at(vars(all_of(cols_to_fill_na)), ~replace_na(., 0))
+
+# replace missing mean_congestion with 1 (no traffic)
+result <- result %>%
+  mutate_at(vars(mean_congestion), ~replace_na(., 1))
+```
+
+# Number of purple air sensors
+``` {r}
+unique_sensor_count <- result %>%
+  select(sensor_id) %>%
+  distinct() %>%
+  n_distinct()
+
+cat("Number of PurpleAir sensors: ",unique_sensor_count)
+```
+
+```{}
+osm_uber_sf <- sanfrangrid_roads[sanfrangrid_roads$osm_id %in% unique(uber_data$osm_way_id), ]
+rm(sanfrangrid_roads)
+osm_uber_roads <- merge(osm_uber_sf, uber_data, by.x = "osm_id", by.y = "osm_way_id", all.x = TRUE)
+rm(uber_data)
+```
+
+```{r, eval=FALSE}
+# Plot purple airs map
+map_sf <- mapview(purpleair_sf, col.regions = "purple", col = "purple", cex = 0.1, legend = FALSE)
+
+# Add uber layer
+map_sf <- map_sf + mapview(osm_uber_sf, col.regions="lightblue", col="lightblue")
+
+# View map
+map_sf
+
+# Save map as html
+mapshot(map_sf, url = '/Users/heba/Desktop/Uni/Lim Lab/uber_purpleair/map_sf.html')
+```
+
+# Converting timestamps to a date-time format
+```{ timestamps format}
+uber_data$utc_timestamp <- ymd_hms(uber_data$utc_timestamp)
+purpleair$time_stamp <- ymd_hms(purpleair$time_stamp)
+```
+
+
+# Maps (Select Relevant Layers)
+```{r buildings map}
+purpleair_buildings <- purpleair_buildings %>%
+  mutate(building_type = type) %>%
+  select(-type) %>% 
+  mutate(building_type = coalesce(building_type, 'NA'))
+
+purpleair_uber_roads <- purpleair_uber_roads %>%
+  mutate(road_type = type) %>%
+  select(-type) %>%
+  mutate(road_type = coalesce(road_type, 'NA'))
+
+pa_sensors <- purpleairs_sf %>% select(sensr_d)
+
+palette1 <- colorRampPalette(c("pink"))
+palette2 <- colorRampPalette(c("lightgrey"))
+palette3 <- colorRampPalette(c("red", "green"))
+
+# Create maps with custom color palettes
+map1 <- mapview(purpleair_buildings)
+map2 <- mapview(purpleair_uber_roads, zcol = "road_type", col.regions = palette2,col = palette2)
+map3 <- mapview(speed_map, zcol = "free_flow_speed", col.regions = palette3, col = palette3)
+map4 <- mapview(pa_sensors, col.regions = "purple", legend = FALSE)
+
+# Combine the maps
+combined_map <- map1 + map2 + map3 + map4
+
+combined_map
+```
