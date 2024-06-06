@@ -12,13 +12,14 @@ To achieve this goal, the project integrates and analyzes diverse datasets sourc
 
     It provides an overview of each dataset's variables, including their types, the percentage of missing values, unique values, and a description of each variable. It serves as a reference for understanding the structure and contents of the datasets utilized in the project.
 
--   [Download OpenStreetMap Data](DownloadOSMData.md): Downloading OpenStreetMap (OSM) data for the Bay area, including roads, buildings, and trees.
-
-    It includes steps for defining the bounding box, splitting the map into smaller areas, downloading data for each grid cell, and merging the data into single shapefiles for further analysis.
 
 -   [Download PurpleAir Data](DownloadPurpleAirData.md): Downloading hourly PurpleAir PM2.5 data.
 
     Download information for all PurpleAir sensors, then filter to area and dates needed. Download historical hourly air quality data for filtered PurpleAir sensors for each month, then combine into one file. Includes bar plot showing number of active PurpleAir sensors for each month.
+
+-   [Download OpenStreetMap Data](DownloadOSMData.md): Downloading OpenStreetMap (OSM) data for the Bay area, including roads, buildings, and trees.
+
+    Creates buffer around each purpleair sensor, downloads OSM data surrounding each PurpleAir sensor, and merges the data into single shapefiles for further analysis.
 
 -   [Download Weather Data](DownloadWeatherData.md): Create hourly weather dataset including temperature, humidity and wind information.
 
@@ -31,10 +32,6 @@ To achieve this goal, the project integrates and analyzes diverse datasets sourc
 -   [Preprocessing Weather](PreprocessingWeather.md): Link PurpleAir sensors with nearest weather station
 
     Link PurpleAir sensors with nearest weather station and visualize on map.
-    
--   [Preprocessing OSM](PreprocessingOSM.md): Link PurpleAir sensors with OpenStreetMap (OSM) data
-
-    Creates buffer around each purpleair sensor, finds intersections with OSM roads, buildings and trees.
 
 -   [Preprocessing PurpleAir](PreprocessingPurpleAir.md): Clean PurpleAir data points
 
@@ -43,7 +40,7 @@ To achieve this goal, the project integrates and analyzes diverse datasets sourc
 -   [Preprocessing Uber](PreprocessingUber.md): Calculate Free Flow Speeds and Congestion Ratio
 
     Filter uber data near PurpleAir sensors. Calculate Free Flow Speeds and Congestion Ratio. Visualization of free flow speeds and traffic congestion.
-    
+
 -   [Feature Engineering](FeatureEngineering.md): Creating new features
 
     Calculate building areas, road lengths, and number of trees surrounding PurpleAir sensors. Create new columns to represent temporal aspects such as day, hour, and weekend.

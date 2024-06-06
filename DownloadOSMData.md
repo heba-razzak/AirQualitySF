@@ -1,61 +1,83 @@
 Download OSM data
 ================
 
+## Load required libraries
+
 ``` r
-library(dplyr) # For data manipulation
-library(sf) # For working with spatial data
-library(mapview) # For interactive maps
 library(osmdata) # Open Street Map
-library(data.table)
+library(dplyr) # For data manipulation
+library(data.table) # Faster than dataframes (for big files)
+library(sf) # For working with spatial data
+library(leaflet) # For interactive maps
+library(tigris) # Counties map data
 library(ggplot2)
 ```
 
-## Bounding box of San Francisco and surrounding areas
+## Read files
 
 ``` r
-# Greater san fran area
-bbox <- c(xmin = -123.8, ymin = 36.9, xmax = -121.0, ymax = 39.0)
-
-# Shapefile of bounding box
-bbox_sf <- st_as_sfc(st_bbox(bbox))
-
-# Set CRS (coordinate reference system)
-crs = 4326
-st_crs(bbox_sf) <- crs
-
-# view map
-mapview(bbox_sf)
+purpleair_data <- fread(paste0(preprocessing_directory,"/purple_air_sanfran_2018-2019.csv"))
+purpleair_sensors <- st_read(paste0(purpleair_directory, "/purpleair_sensors.gpkg"), quiet = TRUE)
 ```
 
-![](DownloadOSMData_files/figure-gfm/san-fran-bounding-box-1.png)<!-- -->
-
-# Split map into smaller areas
+## Filter PurpleAir sensors
 
 ``` r
-# make polygon into grid with cell size 0.1 x 0.1
-grid <- st_make_grid(bbox_sf, cellsize = c(0.1,0.1))
-
-grid_sf <- st_sf(geometry = grid)
-
-# Display map of grid
-mapview(grid_sf)
+# filter purpleair_sensors for our selected data
+filtered_sensors <- purpleair_sensors %>% 
+  filter(sensor_index %in% unique(purpleair_data$sensor_index))
 ```
 
-    ## Warning in cbind(`Feature ID` = fid, mat): number of rows of result is not a
-    ## multiple of vector length (arg 1)
-
-![](DownloadOSMData_files/figure-gfm/create-grid-1.png)<!-- -->
-
-# Download roads for each grid cell
+## Create Buffers around Purple Air Sensors
 
 ``` r
-# Loop through each location to get the bounding box and OSM data
-for (i in 1:length(grid)) {
-  print(i)
+# change crs to be able to create buffers
+crs_ca <- 3310
+filtered_sensors <- st_transform(filtered_sensors, crs_ca)
+
+# buffer radius in meters
+buffer <- 500
+purpleairs_buffers <- st_buffer(filtered_sensors, dist=buffer, nQuadSegs=2)
+
+# change crs back to original
+crs <- 4326
+filtered_sensors <- st_transform(filtered_sensors, crs)
+purpleairs_buffers <- st_transform(purpleairs_buffers, crs)
+```
+
+# Map of PurpleAir sensors with buffers
+
+``` r
+ca <- counties("California", cb = TRUE, progress_bar=FALSE)
+
+ggplot() +
+  geom_sf(data = ca, color="black", fill="antiquewhite", size=0.25) +
+  geom_sf(data = purpleairs_buffers, fill = "lavender") +
+  geom_sf(data = filtered_sensors, color = "purple", size = 0.1) +
+  coord_sf(xlim = c(-122.55, -122.35), ylim = c(37.83, 37.7)) +
+  theme(panel.background = element_rect(fill = "aliceblue")) +
+  xlab("Longitude") + ylab("Latitude") +
+  ggtitle("PurpleAir in San Francisco")
+```
+
+<figure>
+<img src="DownloadOSMData_files/pa-map-1.png" alt="plot of chunk pa-map" />
+</figure>
+
+# Download OSM roads surrounding each sensor
+
+``` r
+# Loop through each sensor buffer and download OSM data
+for (i in 1:nrow(purpleairs_buffers)) {
+  output_name <- paste0('sensor',purpleairs_buffers[i,]$sensor_index)
+  filename <- paste0(sensor_directory,"/", output_name, "_roads_osm.gpkg")
   
-  output_name <- paste0('grid',i)
+  # if file exists, skip it
+  if (file.exists(filename)) {
+    next
+  }
   
-  osm <- opq(bbox = grid[i]) %>%
+  osm <- opq(bbox = purpleairs_buffers[i,]$geom) %>%
     add_osm_feature(key = 'highway') %>%
     osmdata_sf()
   
@@ -91,40 +113,54 @@ for (i in 1:length(grid)) {
   # Create an sf object
   sf_obj <- st_as_sf(selected_columns)
   
+  # get intersection with buffer
+  sf_obj <- st_intersection(sf_obj, purpleairs_buffers[i,]$geom)
+  
+  # if intersection is empty
+  if (is.null(sf_obj) || nrow(sf_obj) == 0) {
+    next
+  }
+  # Add column for sensor index
+  sf_obj$sensor_index <- purpleairs_buffers[i,]$sensor_index
+  
   # Save the sf object as a shapefile
-  st_write(sf_obj, paste0(output_name, "_roads_osm.shp"), driver = "GPKG", append=FALSE)
+  st_write(sf_obj, filename, driver = "GPKG", append=FALSE, quiet=TRUE)
 }
 ```
 
-## Read each grid roads and save to one file
+## Read sensor roads files and save to one file
 
 ``` r
 # Get a list of file paths
-file_paths <- list.files(pattern = "^grid.*_roads_osm\\.shp$", full.names = TRUE)
+file_paths <- list.files(sensor_directory, pattern = "^sensor.*_roads_osm\\.gpkg$", full.names = TRUE)
 
 # Read all shapefiles into a list
-sf_list <- lapply(file_paths, st_read)
+sf_list <- lapply(file_paths, function(file_path) {
+  sf::st_read(file_path, quiet = TRUE)
+})
 
 # Merge the spatial objects
 merged_sf <- do.call(rbind, sf_list)
 
-# # Remove duplicates based on the 'osm_id' column
-# merged_sf <- merged_sf %>% distinct(osm_id, .keep_all = TRUE)
+# Drop duplicate rows
+merged_sf <- merged_sf %>% distinct()
 
 # Write the merged spatial object to a new shapefile
-st_write(merged_sf, "sanfrangrid_roads_osm.shp", driver = "GPKG", append=FALSE)
+st_write(merged_sf, paste0(osm_directory,"/","bayarea_roads_osm.gpkg"), driver = "GPKG", append=FALSE, quiet=TRUE)
 ```
 
-# Download buildings for each grid cell
+# Download OSM buildings surrounding each sensor
 
 ``` r
-# Loop through each location to get the bounding box and OSM data
-for (i in 1:length(grid)) {
-  print(i)
-  
-  output_name <- paste0('grid',i)
-  
-  osm <- opq(bbox = grid[i]) %>%
+# Loop through each sensor buffer and download OSM data
+for (i in 1:nrow(purpleairs_buffers)) {
+  output_name <- paste0('sensor',purpleairs_buffers[i,]$sensor_index)
+  filename <- paste0(sensor_directory,"/", output_name, "_buildings_osm.gpkg")
+  # if file exists, skip it
+  if (file.exists(filename)) {
+    next
+  }
+  osm <- opq(bbox = purpleairs_buffers[i,]$geom) %>%
     add_osm_feature(key = 'building') %>%
     osmdata_sf()
   
@@ -157,40 +193,57 @@ for (i in 1:length(grid)) {
   # Create an sf object
   sf_obj <- st_as_sf(selected_columns)
   
+  # get intersection with buffer
+  sf_obj <- st_intersection(sf_obj, purpleairs_buffers[i,]$geom)
+  
+  # if intersection is empty
+  if (is.null(sf_obj) || nrow(sf_obj) == 0) {
+    next
+  }
+  
+  # Add column for sensor index
+  sf_obj$sensor_index <- purpleairs_buffers[i,]$sensor_index
+  
   # Save the sf object as a shapefile
-  st_write(sf_obj, paste0(output_name, "_buildings_osm.gpkg"), driver = "GPKG", append=FALSE)
+  st_write(sf_obj, filename, driver = "GPKG", append=FALSE, quiet=TRUE)
 }
 ```
 
-## Read smaller building grid areas and save to one file
+## Read sensor buildings files and save to one file
 
 ``` r
 # Get a list of file paths
-file_paths <- list.files(pattern = "^grid.*_buildings_osm\\.gpkg$", full.names = TRUE)
+file_paths <- list.files(sensor_directory, pattern = "^sensor.*_buildings_osm\\.gpkg$", full.names = TRUE)
 
 # Read all shapefiles into a list
-sf_list <- lapply(file_paths, st_read)
+sf_list <- lapply(file_paths, function(file_path) {
+  sf::st_read(file_path, quiet = TRUE)
+})
 
 # Merge the spatial objects
 merged_sf <- do.call(rbind, sf_list)
 
-# # Remove duplicates based on the 'osm_id' column
-# merged_sf <- merged_sf %>% distinct(osm_id, .keep_all = TRUE)
+# Drop duplicate rows
+merged_sf <- merged_sf %>% distinct()
 
 # Write the merged spatial object to a new shapefile
-st_write(merged_sf, "sanfrangrid_buildings_osm.gpkg", driver = "GPKG", append=FALSE)
+st_write(merged_sf, paste0(osm_directory,"/","bayarea_buildings_osm.gpkg"), driver = "GPKG", append=FALSE, quiet=TRUE)
 ```
 
-# Download trees for each grid cell
+# Download OSM trees surrounding each sensor
 
 ``` r
-# Loop through each location to get the bounding box and OSM data
-for (i in 1:length(grid)) {
-  print(i)
+# Loop through each sensor buffer and download OSM data
+for (i in 1:nrow(purpleairs_buffers)) {
+  output_name <- paste0('sensor',purpleairs_buffers[i,]$sensor_index)
+  filename <- paste0(sensor_directory,"/", output_name, "_trees_osm.gpkg")
   
-  output_name <- paste0('grid',i)
-  
-  osm <- opq(bbox = grid[i]) %>%
+  # if file exists, skip it
+  if (file.exists(filename)) {
+    next
+  }
+
+  osm <- opq(bbox = purpleairs_buffers[i,]$geom) %>%
     add_osm_feature(key = 'natural') %>%
     osmdata_sf()
   
@@ -214,111 +267,138 @@ for (i in 1:length(grid)) {
   # Create an sf object
   sf_obj <- st_as_sf(selected_columns)
   
+  # get intersection with buffer
+  sf_obj <- st_intersection(sf_obj, purpleairs_buffers[i,]$geom)
+  
+  # if intersection is empty
+  if (is.null(sf_obj) || nrow(sf_obj) == 0) {
+    next
+  }
+  # Add column for sensor index
+  sf_obj$sensor_index <- purpleairs_buffers[i,]$sensor_index
+  
   # Save the sf object as a shapefile
-  st_write(sf_obj, paste0(output_name, "_trees_osm.gpkg"), driver = "GPKG", append=FALSE)
+  st_write(sf_obj, filename, driver = "GPKG", append=FALSE, quiet=TRUE)
 }
 ```
 
-## Read smaller trees grid areas and save to one file
+## Read sensor trees files and save to one file
 
 ``` r
 # Get a list of file paths
-file_paths <- list.files(pattern = "^grid.*_trees_osm\\.gpkg$", full.names = TRUE)
+file_paths <- list.files(sensor_directory, pattern = "^sensor.*_trees_osm\\.gpkg$", full.names = TRUE)
 
 # Read all shapefiles into a list
-sf_list <- lapply(file_paths, st_read)
-
+sf_list <- lapply(file_paths, function(file_path) {
+  sf::st_read(file_path, quiet = TRUE)
+})
 # Merge the spatial objects
 merged_sf <- do.call(rbind, sf_list)
 
+# Drop duplicate rows
+merged_sf <- merged_sf %>% distinct()
+
 # Write the merged spatial object to a new shapefile
-st_write(merged_sf, "sanfrangrid_trees_osm.gpkg", driver = "GPKG", append=FALSE)
+st_write(merged_sf, paste0(osm_directory, "/", "bayarea_trees_osm.gpkg"), driver = "GPKG", append=FALSE, quiet=TRUE)
 ```
 
 ## Read merged osm files
 
 ``` r
 # read roads file
-sanfrangrid_roads <- st_read("sanfrangrid_roads_osm.shp", quiet = TRUE)
+bayarea_roads <- st_read(paste0(osm_directory, "/bayarea_roads_osm.gpkg"), quiet = TRUE)
 
 # read buildings file
-sanfrangrid_buildings <- st_read("sanfrangrid_buildings_osm.gpkg", quiet = TRUE)
+bayarea_buildings <- st_read(paste0(osm_directory, "/bayarea_buildings_osm.gpkg"), quiet = TRUE)
 
 # read trees file
-sanfrangrid_trees <- st_read("sanfrangrid_trees_osm.gpkg", quiet = TRUE)
+bayarea_trees <- st_read(paste0(osm_directory, "/bayarea_trees_osm.gpkg"), quiet = TRUE)
+
+# Load california counties for mapping
+ca <- counties("California", cb = TRUE, progress_bar=FALSE)
 ```
 
 ## Plot roads
 
 ``` r
-ggplot(sanfrangrid_roads) + geom_sf()
+ggplot() + 
+  geom_sf(data = ca, color="black", fill="antiquewhite", size=0.25) +
+  geom_sf(data = bayarea_roads, color = "cornflowerblue", size = 0.1) +
+  coord_sf(xlim = c(-123.8, -121.0), ylim = c(36.9, 39.0)) +
+  theme(panel.background = element_rect(fill = "aliceblue")) + 
+  xlab("Longitude") + ylab("Latitude") +
+  ggtitle("OSM Roads")
 ```
 
-![](DownloadOSMData_files/figure-gfm/plot-roads-1.png)<!-- -->
+<figure>
+<img src="DownloadOSMData_files/plot-roads-1.png" alt="plot of chunk plot-roads" />
+</figure>
 
 ## Plot buildings
 
 ``` r
-ggplot(sanfrangrid_buildings) + geom_sf()
+ggplot() + 
+  geom_sf(data = ca, color="black", fill="antiquewhite", size=0.25) +
+  geom_sf(data = bayarea_buildings, color="darkorange3", fill = "darkorange") +
+  coord_sf(xlim = c(-123.8, -121.0), ylim = c(36.9, 39.0)) +
+  theme(panel.background = element_rect(fill = "aliceblue")) + 
+  xlab("Longitude") + ylab("Latitude") +
+  ggtitle("OSM Buildings")
 ```
 
-![](DownloadOSMData_files/figure-gfm/plot-buildings-1.png)<!-- -->
+<figure>
+<img src="DownloadOSMData_files/plot-buildings-1.png" alt="plot of chunk plot-buildings" />
+</figure>
 
 ## Plot trees
 
 ``` r
-ggplot(sanfrangrid_trees) + geom_sf()
+ggplot() + 
+  geom_sf(data = ca, color="black", fill="antiquewhite", size=0.25) +
+  geom_sf(data = bayarea_trees, color = "darkgreen", fill="forestgreen", size = 0.1) +
+  coord_sf(xlim = c(-123.8, -121.0), ylim = c(36.9, 39.0)) +
+  theme(panel.background = element_rect(fill = "aliceblue")) + 
+  xlab("Longitude") + ylab("Latitude") +
+  ggtitle("OSM Trees")
 ```
 
-![](DownloadOSMData_files/figure-gfm/plot-trees-1.png)<!-- -->
-
-# Read roads, buildings, trees for San Fran city (cell 238)
-
-``` r
-# read roads file
-sanfrancell_roads <- st_read("grid238_roads_osm.shp", quiet = TRUE)
-
-# read buildings file
-sanfrancell_buildings <- st_read("grid238_buildings_osm.gpkg", quiet = TRUE)
-
-# read trees file
-sanfrancell_trees <- st_read("grid238_trees_osm.gpkg", quiet = TRUE)
-```
+<figure>
+<img src="DownloadOSMData_files/plot-trees-1.png" alt="plot of chunk plot-trees" />
+</figure>
 
 ## Select small area of San Francisco to map
 
 ``` r
 crs = 4326
-bbox <- c(xmin = -122.47, ymin = 37.76, xmax = -122.44, ymax = 37.74)
+bbox <- c(xmin = -122.46, ymin = 37.76, xmax = -122.42, ymax = 37.72)
 bbox_polygon <- st_as_sfc(st_bbox(bbox))
 st_crs(bbox_polygon) <- crs
-st_crs(sanfrancell_buildings) <- crs
-sanfrancell_roads <- st_intersection(sanfrancell_roads, bbox_polygon)
-sanfrancell_buildings <- st_intersection(sanfrancell_buildings, bbox_polygon)
-sanfrancell_trees <- st_intersection(sanfrancell_trees, bbox_polygon)
+sanfran_roads <- st_intersection(bayarea_roads, bbox_polygon)
+sanfran_buildings <- st_intersection(bayarea_buildings, bbox_polygon)
+sanfran_trees <- st_intersection(bayarea_trees, bbox_polygon)
+sanfran_sensors <- st_intersection(filtered_sensors, bbox_polygon)
+sanfran_buffers <- st_intersection(purpleairs_buffers, bbox_polygon)
 ```
 
-## Map of San Fran roads
+## Plot san fran city
 
 ``` r
-mapview(sanfrancell_roads, layer.name = "Roads",  zcol = "highway")
+leaflet() %>%
+  addPolylines(data = bbox_polygon, color = "black", weight = 3, opacity = 1, popup = "Bounding Box") %>%
+  addPolylines(data = sanfran_roads, color = "cornflowerblue", weight = 1, popup = "Roads") %>%
+  addPolygons(data = sanfran_buildings, fillOpacity = 1, weight = 1, color="darkorange", fillColor = "orange", popup = "Buildings") %>%
+  addCircleMarkers(data = sanfran_trees, popup = "Trees",
+                   fillColor = "#99CC99", fillOpacity = 1,
+                   color = "#336600", weight=1, opacity = 1, radius = 1.5) %>%
+  addCircleMarkers(data = sanfran_sensors, popup = "Sensors",
+                   fillColor = "#CC66CC", fillOpacity = 1,
+                   color = "#9933CC",weight=2, opacity = 1, radius = 5) %>%
+  addPolygons(data = sanfran_buffers, color = "#9933CC", weight = 1, opacity = 1, fillOpacity = 0, popup = "Buffers") %>%
+  addProviderTiles("CartoDB") %>% 
+  addLegend(colors = c("#9933CC", "cornflowerblue", "darkorange", "#336600"), 
+            labels = c("PurpleAir Sensors", "Roads", "Buildings", "Trees"))
 ```
 
-![](DownloadOSMData_files/figure-gfm/mapview-roads-1.png)<!-- -->
-
-## Map of San Fran buildings
-
-``` r
-simplified_buildings <- st_simplify(sanfrancell_buildings, dTolerance = 0.001)
-mapview(simplified_buildings, map.types="CartoDB.Positron", layer.name = "Buildings", zcol = "building")
-```
-
-![](DownloadOSMData_files/figure-gfm/mapview-buildings-1.png)<!-- -->
-
-## Map of San Fran trees
-
-``` r
-mapview(sanfrancell_trees, col.regions = "green", legend = FALSE, layer.name = "Trees")
-```
-
-![](DownloadOSMData_files/figure-gfm/mapview-trees-1.png)<!-- -->
+<figure>
+<img src="DownloadOSMData_files/map-city-1.png" alt="plot of chunk map-city" />
+</figure>

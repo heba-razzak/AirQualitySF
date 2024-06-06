@@ -8,6 +8,7 @@ output: github_document
 ```{r setup, include=FALSE}
 uber_directory <- readr::read_file("inputs/uber_directory.txt")
 preprocessing_directory <- readr::read_file("inputs/preprocessing_directory.txt")
+osm_directory <- readr::read_file("inputs/osm_directory.txt")
 ```
 
 ## Load required libraries
@@ -15,127 +16,61 @@ preprocessing_directory <- readr::read_file("inputs/preprocessing_directory.txt"
 library(dplyr) # For data manipulation
 library(data.table) # Faster than dataframes (for big files)
 library(sf) # For working with spatial data
-# library(mapview) # For interactive maps
-# library(lubridate) # Dates
+library(mapview) # For interactive maps
+library(lubridate) # Dates
+library(ggplot2) # Plots
 # library(purrr) 
 ```
 
 ## Read files
-```{r, read-files, eval=FALSE}
-uber2018 <- data.table::fread(paste0(uber_directory,"uber_2018.csv"))
-uber2019 <- data.table::fread(paste0(uber_directory,"uber_2019.csv"))
-osm_pa_roads <- st_read(paste0(preprocessing_directory, "/sanfran_roads_pa.gpkg"))
+```{r, read-files, eval=TRUE}
+# using random month for testing
+uber2018 <- data.table::fread(paste0(uber_directory,"/uber-2018-5.csv"))
+uber2019 <- data.table::fread(paste0(uber_directory,"/uber-2019-5.csv"))
+
+# uber2018 <- data.table::fread(paste0(uber_directory,"/uber_2018.csv"))
+# uber2019 <- data.table::fread(paste0(uber_directory,"/uber_2019.csv"))
+  osm_pa_roads <- st_read(paste0(preprocessing_directory, "/sanfran_roads_pa.gpkg"), quiet = TRUE)
+filtered_roads <- st_read(paste0(osm_directory, "/grid/grid238_roads_osm.gpkg"), quiet = TRUE)
 ```
-
-
-
-
-```{r, eval=FALSE}
+## Filter Uber data to roads around PurpleAir sensors
+```{r, filter-uber-data, eval=TRUE}
 # Convert the OSM way IDs in the Uber speeds data to character type
-uber_data$osm_way_id <- as.character(uber_data$osm_way_id)
+uber2018$osm_way_id <- as.character(uber2018$osm_way_id)
+uber2019$osm_way_id <- as.character(uber2019$osm_way_id)
+
+# filter uber data surrounding purple air sensors
+uber2018_filtered <- uber2018 %>% filter(osm_way_id %in% unique(osm_pa_roads$osm_id)) 
+uber2019_filtered <- uber2019 %>% filter(osm_way_id %in% unique(osm_pa_roads$osm_id))
+
+uber_data <- rbind(uber2018_filtered, uber2019_filtered)
 ```
 
-```{r, eval=FALSE}
-# Change highway column to factor (to have ordered levels)
-# https://wiki.openstreetmap.org/wiki/Map_features#Highway
+## Calculate congestion based on free-flow speed (95th percentile of speed) for each osm_way_id
+### Congestion:
+###  1 = free flow speed
+### <1 = congestion
+### >1 = faster speed
 
-uber_data$highway <- factor(uber_data$highway,
-                               levels=c("motorway", "trunk", "primary", "secondary", "tertiary",
-                                        "construction", "unclassified", "residential",
-                                        "motorway_link", "trunk_link", "primary_link", "secondary_link",
-                                        "tertiary_link", "service", "pedestrian", "cycleway"))
-
-uber_data <- uber_data %>% select(utc_timestamp, osm_way_id, speed_mph_mean, highway)
-```
-
-```{r, eval=FALSE}
-uber_data <- uber_data %>%
-  filter(utc_timestamp >= as.POSIXct("2019-09-01 00:00:00") &
-         utc_timestamp < as.POSIXct("2019-09-02 00:00:00"))
-
-purpleair <- purpleair %>%
-  filter(time_stamp >= as.POSIXct("2019-09-01 00:00:00") &
-         time_stamp < as.POSIXct("2019-09-02 00:00:00"))
-
-```
-
-
-# Calculate free-flow speed (95th percentile of speed) for each osm_way_id
-```{ Calculate free-flow speed}
-free_flow_speeds <- uber_data %>%
+```{r, congestion}
+uber_congestion <- uber_data %>%
   group_by(osm_way_id) %>%
-  summarise(free_flow_speed = quantile(speed_mph_mean, 0.95)) %>%
-  ungroup()
-```
-
-
-```{r, eval=FALSE}
-uber_data <- uber_data %>%
-  group_by(osm_way_id) %>%
-  mutate(free_flow_speed = quantile(speed_mph_mean, 0.95)) %>%
-  ungroup()
-uber_data$congestion_ratio <- uber_data$speed_mph_mean / uber_data$free_flow_speed
-
-speed_map <- purpleair_roads %>% left_join(uber_data, by = c("osm_id" = "osm_way_id"))
-palette3 <- colorRampPalette(c("red", "green"))
-
-map <- mapview(purpleairs, col.regions = "purple", legend = FALSE, layer.name = "PurpleAir Sensors")
-# (1 = free flow speed, <1 = congestion, >1 = faster speed)
-# map1 <- map + mapview(speed_map, zcol = "congestion_ratio",
-#                       col.regions = palette3, col = palette3, legend.lab = "Congestion Ratio")
-map1 <- map + mapview(speed_map, zcol = "free_flow_speed",
-                      col.regions = palette3, col = palette3,
-                      legend.lab = "Free Flow Speed", layer.name = "Free Flow Speed")
-map1
-```
-
-
-# Join free flow speeds to Uber ways spatial data
-```{ Join free flow speeds to Uber ways}
-purpleair_uber_roads$osm_id <- as.character(purpleair_uber_roads$osm_id)
-
-speed_map <- purpleair_uber_roads %>% left_join(free_flow_speeds, by = c("osm_id" = "osm_way_id"))
-```
-# Visualize the speed map
-```{r speed map}
-mapview(speed_map, zcol="free_flow_speed")
-```
-# Join free_flow_speeds with uber_data
-```{ join free_flow_speeds w uber}
-uber_data <- uber_data %>%
-  left_join(free_flow_speeds, by = "osm_way_id")
-```
-# Free Flow Speeds
-```{r}
-uber_data <- uber_data %>%
-  group_by(osm_way_id) %>%
-  mutate(free_flow_speed = quantile(speed_mph_mean, 0.95)) %>%
-  ungroup()
-```
-# Calculate congestion ratio for each observation (1 = free flow speed, <1 = congestion, >1 = faster speed)
-```{r Calculate congestion}
-uber_data$congestion_ratio <- uber_data$speed_mph_mean / uber_data$free_flow_speed
-```
-# Aggregate congestion ratio by timestamp
-```{ Aggregate congestion ratio by timestamp}
-road_congestion_hourly <- uber_data %>%
-  group_by(osm_way_id, utc_timestamp) %>%
-  summarise(
-    congestion_ratio_mean = mean(congestion_ratio, na.rm = TRUE)
+  mutate(
+    free_flow_speed = quantile(speed_mph_mean, 0.95),
+    congestion_ratio = speed_mph_mean / free_flow_speed
   ) %>%
   ungroup()
 ```
-# Visualize congestion by hour and day
 
-```{r Visualize congestion by hour and day}
-uber_data$local_timestamp <- with_tz(uber_data$utc_timestamp, tzone = "America/Los_Angeles")
+## Visualize congestion by hour and day
+```{r, congestion-heatmap, warning=FALSE}
+uber_congestion$local_timestamp <- with_tz(uber_congestion$utc_timestamp, tzone = "America/Los_Angeles")
 
-road_congestion_dailyhourly <- uber_data %>%
+road_congestion_dailyhourly <- uber_congestion %>%
   mutate(DayOfWeek = factor(lubridate::wday(local_timestamp, label=TRUE, abbr = TRUE)),
          HourOfDay = hour(local_timestamp)) %>% 
   group_by(DayOfWeek, HourOfDay) %>%
-  summarize(congestion_ratio_mean = mean(congestion_ratio)) %>%
-  ungroup()
+  summarize(congestion_ratio_mean = mean(congestion_ratio), .groups = 'drop')
 
 hour_labels <- c("12 AM", "1 AM", "2 AM", "3 AM", "4 AM", "5 AM", "6 AM", 
                  "7 AM", "8 AM", "9 AM", "10 AM", "11 AM", "12 PM", 
@@ -157,5 +92,72 @@ heatmap_plot <- ggplot(road_congestion_dailyhourly, aes(x = HourOfDay, y = DayOf
   scale_x_continuous(breaks = 0:23, labels = hour_labels) 
 
 print(heatmap_plot)
+```
+
+```{r, congestion-map1}
+congestion_sf <- inner_join(filtered_roads, uber_congestion, by = c("osm_id" = "osm_way_id"))
+
+trafficpalette <- colorRampPalette(c("red", "green"))
+
+# Average congestion on Wednesdays at 4 PM
+congestion_map1 <- congestion_sf %>% filter(weekdays(local_timestamp) == "Wednesday",
+                         hour(local_timestamp) == 16) %>%
+  group_by(osm_id) %>%
+  summarize(avg_speed = mean(speed_mph_mean, na.rm = TRUE),
+            free_flow_speed = mean(free_flow_speed, na.rm = TRUE)) %>%
+  mutate(congestion = avg_speed / free_flow_speed)
+
+mapview(congestion_map1, zcol = "congestion",
+                      col.regions = trafficpalette, col = trafficpalette,
+                      at = seq(0, 1.5, length.out = 7),
+                      legend.lab = "Average Congestion", layer.name = "Wednedays at 4 PM")
+```
+
+```{r, congestion-map2}
+# Average congestion on Sundays at 7 AM
+congestion_map2 <- congestion_sf %>% filter(weekdays(local_timestamp) == "Sunday",
+                         hour(local_timestamp) == 7) %>%
+  group_by(osm_id) %>%
+  summarize(avg_speed = mean(speed_mph_mean, na.rm = TRUE),
+            free_flow_speed = mean(free_flow_speed, na.rm = TRUE)) %>%
+  mutate(congestion = avg_speed / free_flow_speed)
+
+mapview(congestion_map2, zcol = "congestion",
+                      col.regions = trafficpalette, col = trafficpalette,
+                      at = seq(0, 1.5, length.out = 7),
+                      legend.lab = "Average Congestion", layer.name = "Sundays at 7 AM")
 
 ```
+
+```{r, free-flow-map}
+# get freeflow speed for each road
+freeflow <- uber_data %>%
+  group_by(osm_way_id) %>%
+  summarize(free_flow_speed = quantile(speed_mph_mean, 0.95))
+
+freeflow_sf <- inner_join(filtered_roads, freeflow, by = c("osm_id" = "osm_way_id"))
+
+trafficpalette <- colorRampPalette(c("red", "green"))
+
+mapview(freeflow_sf, zcol = "free_flow_speed",
+                      col.regions = trafficpalette, col = trafficpalette,
+                      legend.lab = "Free Flow Speed", layer.name = "Free Flow Speed")
+```
+
+
+
+
+```{r, eval=FALSE}
+# Change highway column to factor (to have ordered levels)
+# https://wiki.openstreetmap.org/wiki/Map_features#Highway
+
+uber_data$highway <- factor(uber_data$highway,
+                               levels=c("motorway", "trunk", "primary", "secondary", "tertiary",
+                                        "construction", "unclassified", "residential",
+                                        "motorway_link", "trunk_link", "primary_link", "secondary_link",
+                                        "tertiary_link", "service", "pedestrian", "cycleway"))
+
+uber_data <- uber_data %>% select(utc_timestamp, osm_way_id, speed_mph_mean, highway)
+```
+
+#####

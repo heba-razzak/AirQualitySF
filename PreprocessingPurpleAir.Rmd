@@ -22,7 +22,7 @@ library(mapview) # Interactive maps
 
 ## Read files
 ```{r, read-files, eval=TRUE}
-purpleair_data <- fread(paste0(purpleair_directory,"/purple_air_sanfran_2018-2019.csv"))
+purpleair_data <- fread(paste0(preprocessing_directory,"/purple_air_sanfran_2018-2019.csv"))
 purpleair_sensors <- st_read(paste0(purpleair_directory, "/purpleair_sensors.gpkg"), quiet = TRUE)
 ```
 
@@ -97,7 +97,7 @@ purpleair_filtered <- purpleair_data %>%
   filter(pm2.5_atm_a < maxpm25) %>%
   filter(pm2.5_atm_b < maxpm25)
 
-write.csv(purpleair_filtered, file = paste0(preprocessing_directory,"purpleair_2018-2019.csv"), row.names = FALSE)
+write.csv(purpleair_filtered, file = paste0(preprocessing_directory,"/purpleair_2018-2019.csv"), row.names = FALSE)
 
 ggplot(purpleair_filtered, aes(x = pm2.5_atm_a, y = pm2.5_atm_b)) +
   geom_point() +

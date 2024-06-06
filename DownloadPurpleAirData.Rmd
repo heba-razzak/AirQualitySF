@@ -5,17 +5,18 @@ output: github_document
 
 ```{r, setup, include=FALSE}
 auth_key <- readr::read_file("inputs/purpleair_key.txt")
-file_directory <- readr::read_file("inputs/purpleair_directory.txt")
-knitr::opts_knit$set(root.dir = file_directory)
+purpleair_directory <- readr::read_file("inputs/purpleair_directory.txt")
+preprocessing_directory <- readr::read_file("inputs/preprocessing_directory.txt")
+knitr::opts_knit$set(root.dir = purpleair_directory)
 ```
 
 ## Load required libraries
 ```{r, load-libraries, message = FALSE, warning = FALSE}
 library(dplyr) # For data manipulation
 library(sf) # For working with spatial data
-library(mapview) # For interactive maps
 library(ggplot2) # For visualizing data
 library(lubridate) # For working with dates
+library(tigris) # Counties map data
 
 # install package from github
 library(devtools)
@@ -42,7 +43,7 @@ st_write(pa_sensors_sf, "purpleair_sensors.gpkg", driver = "GPKG", append=FALSE)
 ```
 
 # Get purple air sensors in san fran area (using bounding box)
-```{r, san-fran-bounding-box, warning = FALSE}
+```{r, san-fran-bounding-box, message = FALSE, warning = FALSE}
 # Greater san fran area
 bbox <- c(xmin = -123.8, ymin = 36.9, xmax = -121.0, ymax = 39.0)
 
@@ -56,11 +57,19 @@ st_crs(bbox_sf) <- crs
 # intersection of purple air sensors and bounding box
 purpleairs_sf <- st_intersection(pa_sf, bbox_sf)
 
-# interactive map
-mapview(purpleairs_sf)
+ca <- counties("California", cb = TRUE)
+
+ggplot() + 
+  geom_sf(data = ca, color="black", fill="antiquewhite", size=0.25) +
+  # geom_sf(data = purpleairs_buffers, fill = "lavender") +
+  geom_sf(data = purpleairs_sf, color = "purple", size = 0.1) +
+  coord_sf(xlim = c(-123.8, -121.0), ylim = c(36.9, 39.0)) +
+  theme(panel.background = element_rect(fill = "aliceblue")) + 
+  xlab("Longitude") + ylab("Latitude") +
+  ggtitle("PurpleAir in San Francisco") 
 ```
 
-## number of sensors
+## Number of sensors
 ```{r, number-of-sensors}
 cat("Total number of sensors: ", length(unique(purpleairs_sf$sensor_index)))
 ```
@@ -121,13 +130,9 @@ while (current_date <= end_date) {
 }
 ```
 
-```{r}
-head(purple_air)
-```
-
 ```{r, bind-purpleair-files, eval=FALSE}
 # Get a list of file paths
-file_paths <- list.files(file_directory, pattern = "purple_air_sanfran_.*.csv", full.names = FALSE)
+file_paths <- list.files(purpleair_directory, pattern = "purple_air_sanfran_.*.csv", full.names = FALSE)
 
 # Read files
 dfs <- lapply(file_paths, read.csv)
@@ -140,24 +145,17 @@ from = "9999-99-99"
 to = "0000-00-00"
 
 for (f in file_paths) {
-  from = min(from,substr(f,20,29))
-  to = max(to,substr(f,31,40))
+  from = min(from,substr(f,20,23))
+  to = max(to,substr(f,31,34))
 }
 
 # Save full df to csv
-write.csv(fulldata, file = paste0("purple_air_sanfran_", from, "_", to, ".csv"), row.names = FALSE)
+write.csv(fulldata, file = paste0(preprocessing_directory, "/purple_air_sanfran_", from, "-", to, ".csv"), row.names = FALSE)
 ```
 
 ```{r, monthly-sensors}
-# Read purple air data (get filename for full data then read it)
-file_paths <- list.files(file_directory, pattern = "purple_air_sanfran_.*.csv", full.names = FALSE)
-from = "9999-99-99"
-to = "0000-00-00"
-for (f in file_paths) {
-  from = min(from,substr(f,20,29))
-  to = max(to,substr(f,31,40))
-}
-fulldata <- read.csv(paste0("purple_air_sanfran_", from, "_", to, ".csv"))
+# Read purple air data
+fulldata <- read.csv(paste0(preprocessing_directory, "/purple_air_sanfran_2018-2019.csv"))
 
 # Add column for month
 fulldata$month <- format(as.Date(fulldata$time_stamp), "%Y-%m")
