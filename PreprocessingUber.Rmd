@@ -115,6 +115,8 @@ heatmap_plot <- ggplot(road_congestion_dailyhourly, aes(x = HourOfDay, y = DayOf
   scale_x_continuous(breaks = 0:23, labels = hour_labels) 
 
 print(heatmap_plot)
+
+# ggsave("congestion-heatmap-1.png", plot = heatmap_plot, width = 10, height = 6, bg = "white")
 ```
 
 ## Prepare data for maps
