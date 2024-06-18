@@ -11,11 +11,14 @@ To achieve this goal, the project integrates and analyzes diverse datasets sourc
 -   [Data Dictionary](DataDictionary.md): The data dictionary contains a description of each dataset used in the project.
 
     It provides an overview of each dataset's variables, including their types, the percentage of missing values, unique values, and a description of each variable. It serves as a reference for understanding the structure and contents of the datasets utilized in the project.
-
-
+    
 -   [Download PurpleAir Data](DownloadPurpleAirData.md): Downloading hourly PurpleAir PM2.5 data.
 
     Download information for all PurpleAir sensors, then filter to area and dates needed. Download historical hourly air quality data for filtered PurpleAir sensors for each month, then combine into one file. Includes bar plot showing number of active PurpleAir sensors for each month.
+    
+-   [Preprocessing PurpleAir](PreprocessingPurpleAir.md): Clean PurpleAir data points
+
+    Clean PurpleAir data points, ensuring data quality by dealing with outliers and inconsistencies. Visualization of outliers. To be added: Check if there's a pattern of sensors failing after an inconsistency is detected.
 
 -   [Download OpenStreetMap Data](DownloadOSMData.md): Downloading OpenStreetMap (OSM) data for the Bay area, including roads, buildings, and trees.
 
@@ -25,21 +28,13 @@ To achieve this goal, the project integrates and analyzes diverse datasets sourc
 
     Obtain weather station information for California using RIEM. Collects weather data for the stations in Bay Area. Processes the retrieved weather data, calculates averages for temperature, relative humidity, wind direction, wind speed, and wind gusts grouped by station and hour.
 
--   [Combining Uber CSVs](CombiningUberCSVs.md): Filtering and Combining multiple CSV files from Uber.
-
-    Reading individual monthly Uber CSV files, selecting necessary columns, merging data from different files into one for each year, and verifying the correctness of the combined files.
-
 -   [Preprocessing Weather](PreprocessingWeather.md): Link PurpleAir sensors with nearest weather station
 
     Link PurpleAir sensors with nearest weather station and visualize on map.
 
--   [Preprocessing PurpleAir](PreprocessingPurpleAir.md): Clean PurpleAir data points
-
-    Clean PurpleAir data points, ensuring data quality by dealing with outliers and inconsistencies. Visualization of outliers. To be added: Check if there's a pattern of sensors failing after an inconsistency is detected.
-
 -   [Preprocessing Uber](PreprocessingUber.md): Calculate Free Flow Speeds and Congestion Ratio
 
-    Filter uber data near PurpleAir sensors. Calculate Free Flow Speeds and Congestion Ratio. Visualization of free flow speeds and traffic congestion.
+    Reading individual monthly Uber CSV files, select necessary columns, filter uber data near PurpleAir sensors, calculate Free Flow Speeds and Congestion Ratio, save combined traffic file. Visualization of free flow speeds and traffic congestion.
 
 -   [Feature Engineering](FeatureEngineering.md): Creating new features
 

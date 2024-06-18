@@ -16,7 +16,7 @@ library(ggplot2)
 ## Read files
 
 ``` r
-purpleair_data <- fread(paste0(preprocessing_directory,"/purple_air_sanfran_2018-2019.csv"))
+purpleair_data <- fread(paste0(preprocessing_directory,"/purpleair_filtered_2018-2019.csv"))
 purpleair_sensors <- st_read(paste0(purpleair_directory, "/purpleair_sensors.gpkg"), quiet = TRUE)
 ```
 

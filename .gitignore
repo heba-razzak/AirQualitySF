@@ -7,3 +7,6 @@
 /inprogress
 /Preprocessing
 /OSM/sensor_data
+OSM/bayarea_trees_osm.gpkg
+OSM/bayarea_roads_osm.gpkg
+OSM/bayarea_buildings_osm.gpkg

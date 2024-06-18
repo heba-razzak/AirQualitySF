@@ -173,12 +173,12 @@ for (f in file_paths) {
 }
 
 # Save full df to csv
-write.csv(fulldata, file = paste0(preprocessing_directory, "/purple_air_sanfran_", from, "-", to, ".csv"), row.names = FALSE)
+write.csv(fulldata, file = paste0(purpleair_directory, "/purple_air_", from, "-", to, ".csv"), row.names = FALSE)
 ```
 
 ``` r
 # Read purple air data
-fulldata <- read.csv(paste0(preprocessing_directory, "/purple_air_sanfran_2018-2019.csv"))
+fulldata <- read.csv(paste0(purpleair_directory, "/purple_air_2018-2019.csv"))
 
 # Add column for month
 fulldata$month <- format(as.Date(fulldata$time_stamp), "%Y-%m")

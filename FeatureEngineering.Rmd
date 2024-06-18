@@ -8,6 +8,7 @@ Calculate building areas, road lengths, and number of trees surrounding PurpleAi
 
 ```{r setup, include=FALSE}
 preprocessing_directory <- readr::read_file("inputs/preprocessing_directory.txt")
+osm_directory <- readr::read_file("inputs/osm_directory.txt")
 ```
 
 ## Load required libraries
@@ -15,65 +16,219 @@ preprocessing_directory <- readr::read_file("inputs/preprocessing_directory.txt"
 library(dplyr) # For data manipulation
 library(data.table) # Faster than dataframes (for big files)
 library(sf) # For working with spatial data
-# library(mapview) # For interactive maps
 library(lubridate) # Dates
+library(tidyr) # pivot
+# library(leaflet) # Interactive maps
 # library(purrr) 
 ```
 
 ## Read files
-```{r, read-files, eval=FALSE}
-purpleair_data <- fread(paste0(preprocessing_directory,"/purpleair_2018-2019.csv"))
-purpleair_sensors <- st_read(paste0(purpleair_directory, "/purpleair_sensors.gpkg"), quiet = TRUE)
-# osm_roads <- st_read(paste0(osm_directory, "/sanfrangrid_roads_osm.gpkg"), quiet = TRUE)
+```{r, read-files}
+traffic_data <- fread(paste0(preprocessing_directory, "/traffic.csv"))
+purpleair_data <- fread(paste0(preprocessing_directory,"/purpleair_filtered_2018-2019.csv"))
+weather_data <- fread(paste0(preprocessing_directory,"/weather_filtered.csv"))
+
+purpleair_sensors <- st_read(paste0(preprocessing_directory, "/pasensors_weatherstations.gpkg"), quiet = TRUE)
+osm_roads <- st_read(paste0(osm_directory, "/bayarea_roads_osm.gpkg"), quiet = TRUE)
+osm_trees <- st_read(paste0(osm_directory, "/bayarea_trees_osm.gpkg"), quiet = TRUE)
+osm_buildings <- st_read(paste0(osm_directory, "/bayarea_buildings_osm.gpkg"), quiet = TRUE)
 ```
 
-# filter temps to year and month and create datetime column
-```{r filter temps}
-temps <- temps %>% mutate(Date = ymd(Date)) %>% filter(year(Date) == year, month(Date) == month) %>%
-  mutate(datetime = ymd_hms(paste(Date, Time))) %>%
-  select(datetime, everything(), -Date, -Time)
-```
-
-# Get area of buildings for each PA sensor
-```{}
-path = '/Users/heba/Desktop/Uni/Lim Lab/uber_purpleair/'
-purpleair_buildings <- st_read(paste0(path,"purpleair_buildings.shp"))
-
-purpleair_building_areas <- purpleair_buildings %>%
-  group_by(sensr_d, type) %>%
-  summarize(total_area = sum(st_area(geometry)))
-
-st_write(purpleair_building_areas, "/Users/heba/Desktop/Uni/Lim Lab/uber_purpleair/purpleair_building_areas.shp", append=FALSE)
-
-```
-
-# Road lengths
-```{r, eval=FALSE}
-path = '/Users/heba/Desktop/Uni/Lim Lab/uber_purpleair/'
-purpleair_uber_roads <- st_read(paste0(path,'purpleair_uber_roads.shp'))
-
-purpleair_road_length <- purpleair_uber_roads %>%
-  group_by(sensr_d, type) %>%
-  summarize(road_length = sum(st_length(geometry)))
-
-st_write(purpleair_road_length, "/Users/heba/Desktop/Uni/Lim Lab/uber_purpleair/purpleair_road_length.shp", append=FALSE)
-```
-
-
-# Create date variables for prediction
 ```{r}
-result$local_timestamp <- with_tz(result$time_stamp, tzone = "America/Los_Angeles")
-
-# # no holidays in june so it doesnt make sense to use for this month
-# result$local_date <- as.Date(result$local_timestamp)
-# result$is_holiday <- result$local_date %in% as.Date(holidays)
-
-result$day_of_week <- wday(result$local_timestamp)
-result$hour <- hour(result$local_timestamp)
-result$day <- day(result$local_timestamp)
-result$month <- month(result$local_timestamp)
-result$year <- year(result$local_timestamp)
-result$is_weekend <- ifelse(result$day_of_week %in% c(6, 7), 1, 0) # 6 and 7 represent the weekend
-
-head(result)
+print_data_dict(traffic_data)
 ```
+
+```{r}
+print_data_dict(purpleair_data)
+```
+
+```{r}
+print_data_dict(weather_data)
+```
+
+```{r}
+print_data_dict(purpleair_sensors)
+```
+
+```{r}
+print_data_dict(osm_roads)
+```
+
+```{r}
+print_data_dict(osm_trees)
+```
+
+```{r}
+print_data_dict(osm_buildings)
+```
+
+```{r}
+print_data_dict(building_areas)
+```
+
+
+## Create final dataset temporal features
+```{r, temporal-features}
+final_dataset <- purpleair_data %>%
+  mutate(
+    local_timestamp = with_tz(time_stamp, tzone = "America/Los_Angeles"),
+    local_date = as.Date(local_timestamp, tz="America/Los_Angeles"),
+    day_of_week = lubridate::wday(local_timestamp),
+    hour = lubridate::hour(local_timestamp),
+    day = lubridate::day(local_timestamp),
+    month = lubridate::month(local_timestamp),
+    year = lubridate::year(local_timestamp),
+    is_weekend = ifelse(day_of_week %in% c(6, 7), 1, 0)
+  )
+```
+
+## Calculate building areas for each PurpleAir sensor
+
+```{r, building-areas}
+# building areas in m^2
+building_areas <- osm_buildings %>%
+  select(sensor_index) %>%
+  group_by(sensor_index) %>%
+  summarize(building_area = sum(st_area(geom))) %>%
+  ungroup() %>% st_drop_geometry()
+
+# remove units from building_area
+attributes(building_areas$building_area) = NULL
+
+# Merge building areas with final_dataset
+final_dataset <- final_dataset %>%
+  left_join(building_areas, by = "sensor_index")
+```
+
+## Count building types for each PurpleAir sensor
+
+```{r, building-counts}
+# Drop geometry and calculate building counts
+building_counts <- osm_buildings %>% st_drop_geometry() %>%
+  select(sensor_index, building) %>%
+  group_by(sensor_index, building) %>%
+  summarize(count = n(), .groups = 'drop') %>%
+  pivot_wider(names_from = building, names_prefix = "b_", 
+              values_from = count, values_fill = list(count = 0))
+
+# Calculate the total counts for each building type
+total_counts <- building_counts %>%
+  summarize(across(starts_with("b_"), sum)) %>%
+  gather(building, total_count) %>%
+  mutate(percentage = total_count / sum(total_count) * 100) %>%
+  arrange(desc(percentage))
+
+# Select building types with a percentage larger than the cutoff (0.5%)
+relevant_buildings <- total_counts %>%
+  filter(percentage > 0.5) %>%
+  pull(building)
+
+# Create the b_others column by summing the counts of less relevant building types
+building_counts <- building_counts %>%
+  mutate(b_others = rowSums(select(., -sensor_index, -one_of(relevant_buildings)))) %>%
+  select(sensor_index, all_of(relevant_buildings), b_others)
+
+# Merge building counts with final_dataset
+final_dataset <- final_dataset %>%
+  left_join(building_counts, by = "sensor_index")
+```
+
+## Change highway column to factor (to have ordered levels)
+```{r, factor-highway}
+# https://wiki.openstreetmap.org/wiki/Map_features#Highway
+
+osm_roads$highway <- factor(osm_roads$highway,
+                            levels=c("motorway", "trunk", "primary", "secondary", "tertiary",
+                                     "construction", "unclassified", "residential",
+                                     "motorway_link", "trunk_link", "primary_link", "secondary_link",
+                                     "tertiary_link", "service", "pedestrian", "cycleway"))
+```
+
+## Calculate road lengths for each PurpleAir sensor
+```{r, road-length}
+# road lengths in m
+road_lengths <- osm_roads %>%
+  select(sensor_index) %>%
+  group_by(sensor_index) %>%
+  summarize(road_length = sum(st_length(geom))) %>%
+  ungroup() %>% st_drop_geometry()
+  
+# remove units from road_length
+attributes(road_lengths$road_length) = NULL
+
+# Merge road lengths with final_dataset
+final_dataset <- final_dataset %>%
+  left_join(road_lengths, by = "sensor_index")
+```
+
+## Count road types for each PurpleAir sensor
+
+```{r, road-counts}
+# Drop geometry and calculate road counts
+road_counts <- osm_roads %>% st_drop_geometry() %>%
+  select(sensor_index, highway) %>%
+  group_by(sensor_index, highway) %>%
+  summarize(count = n(), .groups = 'drop') %>%
+  pivot_wider(names_from = highway, names_prefix = "r_", 
+              values_from = count, values_fill = list(count = 0))
+
+# Calculate the total counts for each road type
+total_counts <- road_counts %>%
+  summarize(across(starts_with("r_"), sum)) %>%
+  gather(road, total_count) %>%
+  mutate(percentage = total_count / sum(total_count) * 100) %>%
+  arrange(desc(percentage))
+
+# Select road types with a percentage larger than the cutoff (0.5%)
+relevant_roads <- total_counts %>%
+  filter(percentage > 0.5) %>%
+  pull(road)
+
+# Create the r_others column by summing the counts of less relevant building types
+road_counts <- road_counts %>%
+  mutate(r_others = rowSums(select(., -sensor_index, -one_of(relevant_roads)))) %>%
+  select(sensor_index, all_of(relevant_roads), r_others)
+
+# Merge road counts with final_dataset
+final_dataset <- final_dataset %>%
+  left_join(road_counts, by = "sensor_index")
+```
+
+## Calculate num trees for each PurpleAir sensor
+```{r, tree-counts}
+# Drop geometry and calculate tree counts
+tree_counts <- osm_trees %>% st_drop_geometry() %>%
+  select(sensor_index) %>%
+  group_by(sensor_index) %>%
+  summarize(num_trees = n(), .groups = 'drop')
+
+# Merge tree counts with final_dataset
+final_dataset <- final_dataset %>%
+  left_join(tree_counts, by = "sensor_index")
+```
+
+## Traffic preprocessing
+```{r, traffic}
+# traffic per sensor
+head(traffic_data)
+```
+
+## Weather preprocessing
+```{r, weather}
+# weather per sensor
+head(weather_data)
+head(purpleair_sensors)
+```
+
+# ???
+```{r, merge-data}
+# Merge traffic data
+final_dataset <- final_dataset %>%
+  left_join(traffic_data, by = c("time_stamp" = "utc_timestamp"))
+
+# Merge weather data
+final_dataset <- final_dataset %>%
+  left_join(weather_data, by = c("weatherstation" = "id"))
+```
+
+
