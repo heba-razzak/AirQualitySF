@@ -7,7 +7,6 @@ output: github_document
 auth_key <- readr::read_file("inputs/purpleair_key.txt")
 purpleair_directory <- readr::read_file("inputs/purpleair_directory.txt")
 preprocessing_directory <- readr::read_file("inputs/preprocessing_directory.txt")
-knitr::opts_knit$set(root.dir = purpleair_directory)
 ```
 
 ## Load required libraries
@@ -17,14 +16,13 @@ library(sf) # For working with spatial data
 library(ggplot2) # For visualizing data
 library(lubridate) # For working with dates
 library(tigris) # Counties map data
-
-# install package from github
-library(devtools)
-suppressMessages({devtools::install_github("heba-razzak/getPurpleairApiHistoryV2")})
+# # install package from github
+# library(devtools)
+# suppressMessages({devtools::install_github("heba-razzak/getPurpleairApiHistoryV2")})
 library(getPurpleairApiHistoryV2)
 ```
 
-# Download purple air sensor id, lat, lon, date created, last seen
+## Download purple air sensor id, lat, lon, date created, last seen
 ```{r, download-purpleair-sensors}
 pa <- getPurpleairSensors(apiReadKey = auth_key)
 
@@ -39,11 +37,11 @@ head(pa_sf)
 # Save PurpleAir sensors shapefile (sensor index & location)
 pa_sensors <- pa %>% select(sensor_index, latitude, longitude)
 pa_sensors_sf <- st_as_sf(pa_sensors, coords=c("longitude", "latitude"), crs = crs)
-st_write(pa_sensors_sf, "purpleair_sensors.gpkg", driver = "GPKG", append=FALSE)
+st_write(pa_sensors_sf, paste0(purpleair_directory,"/purpleair_sensors.gpkg"), driver = "GPKG", append=FALSE)
 ```
 
-# Get purple air sensors in san fran area (using bounding box)
-```{r, san-fran-bounding-box, message = FALSE, warning = FALSE}
+## Map PurpleAir sensors in Bay Area
+```{r, sensors-bayarea, message = FALSE, warning = FALSE}
 # Greater san fran area
 bbox <- c(xmin = -123.8, ymin = 36.9, xmax = -121.0, ymax = 39.0)
 
@@ -61,12 +59,11 @@ ca <- counties("California", cb = TRUE)
 
 ggplot() + 
   geom_sf(data = ca, color="black", fill="antiquewhite", size=0.25) +
-  # geom_sf(data = purpleairs_buffers, fill = "lavender") +
   geom_sf(data = purpleairs_sf, color = "purple", size = 0.1) +
   coord_sf(xlim = c(-123.8, -121.0), ylim = c(36.9, 39.0)) +
   theme(panel.background = element_rect(fill = "aliceblue")) + 
   xlab("Longitude") + ylab("Latitude") +
-  ggtitle("PurpleAir in San Francisco") 
+  ggtitle("PurpleAir in Bay Area") 
 ```
 
 ## Number of sensors
@@ -74,21 +71,21 @@ ggplot() +
 cat("Total number of sensors: ", length(unique(purpleairs_sf$sensor_index)))
 ```
 
+## Set inputs for PurpleAir data
 ```{r, inputs-purple-air}
-# Inputs for purple air function
+# Inputs to download purple air
 apiReadKey <- auth_key
 fields <- c("pm2.5_atm, pm2.5_atm_a, pm2.5_atm_b")
 average <- "60"
-```
 
-```{r, date-range}
 # Date range of historical purple air data
-start_date <- as.Date("2019-08-01")
-  end_date <- as.Date("2019-12-31")
+start_date <- as.Date("2018-01-01")
+end_date <- as.Date("2019-12-31")
 current_date <- start_date
 ```
 
-```{r, download-data, eval=FALSE}
+## Download PurpleAir data
+```{r, download-data, eval=TRUE}
 # Iterate over each 1 month period
 while (current_date <= end_date) {
   
@@ -115,9 +112,9 @@ while (current_date <= end_date) {
     average=average,
     fields=fields
   )
-  
   # Save to CSV file
-  write.csv(purple_air, file = paste0("purple_air_sanfran_", current_date, "_", next_date, ".csv"), row.names = FALSE)
+  write.csv(purple_air, 
+            file = paste0(purpleair_directory, "/purple_air_sanfran_", current_date, "_", next_date, ".csv"), row.names = FALSE)
   
   # Print time it took
   end_time <- Sys.time()
@@ -130,7 +127,8 @@ while (current_date <= end_date) {
 }
 ```
 
-```{r, bind-purpleair-files, eval=FALSE}
+## Bind monthly PurpleAir files
+```{r, bind-purpleair-files, eval=TRUE}
 # Get a list of file paths
 file_paths <- list.files(purpleair_directory, pattern = "purple_air_sanfran_.*.csv", full.names = FALSE)
 
@@ -153,19 +151,39 @@ for (f in file_paths) {
 write.csv(fulldata, file = paste0(purpleair_directory, "/purple_air_", from, "-", to, ".csv"), row.names = FALSE)
 ```
 
-```{r, monthly-sensors}
+## Map PurpleAir Sensors Bay Area (2018-2019)
+```{r, map-sensors}
 # Read purple air data
 fulldata <- read.csv(paste0(purpleair_directory, "/purple_air_2018-2019.csv"))
 
+purpleairs_sf_filtered <- purpleairs_sf %>% 
+  filter(sensor_index %in% unique(fulldata$sensor_index)) %>% 
+  select(sensor_index)
+
+ca <- counties("California", cb = TRUE)
+
+ggplot() + 
+  geom_sf(data = ca, color="black", fill="antiquewhite", size=0.25) +
+  geom_sf(data = purpleairs_sf_filtered, color = "purple", size = 0.1) +
+  coord_sf(xlim = c(-123.8, -121.0), ylim = c(36.9, 39.0)) +
+  theme(panel.background = element_rect(fill = "aliceblue")) + 
+  xlab("Longitude") + ylab("Latitude") +
+  ggtitle("PurpleAir in San Francisco 2018-2019") 
+```
+
+## Number of Sensors 2018-2019
+```{r, num-sensors}
+cat("Total number of sensors: ", length(unique(purpleairs_sf_filtered$sensor_index)))
+```
+
+## Plot Sensors by Month
+```{r, monthly-sensors}
 # Add column for month
 fulldata$month <- format(as.Date(fulldata$time_stamp), "%Y-%m")
 
 # Sensors for each month
 monthly_sensors <- fulldata %>% select(month, sensor_index) %>% distinct()
-head(monthly_sensors)
-```
 
-```{r, count-purpleair-monthly}
 sensor_counts <- monthly_sensors %>%
   group_by(month) %>%
   summarise(sensor_count = n_distinct(sensor_index))

@@ -38,7 +38,7 @@ To achieve this goal, the project integrates and analyzes diverse datasets sourc
 
 -   [Feature Engineering](FeatureEngineering.md): Creating new features
 
-    Calculate building areas, road lengths, and number of trees surrounding PurpleAir sensors. Create new columns to represent temporal aspects such as day, hour, and weekend.
+    Calculate building areas, road lengths, and number of trees surrounding PurpleAir sensors. Create new columns to represent temporal aspects such as day, hour, and weekend. Create feature for lat and lon. Impute missing values for traffic and weather.
 
 -   [Data Integration](DataIntegration.md): Create final dataset
 

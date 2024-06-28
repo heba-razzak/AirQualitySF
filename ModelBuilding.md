@@ -1,7 +1,7 @@
 Model Building
 ================
 
-# Land Use Regression Model
+# Model Building
 
 ## Load required libraries
 
@@ -9,491 +9,169 @@ Model Building
 library(lubridate) # For dates
 library(dplyr) # For data manipulation
 library(sf) # For working with spatial data
-library(timeDate) # For holidays
 library(mapview) # to view maps
 library(tidyr) # pivot
 library(ggplot2) # plots
 library(data.table) # Faster than dataframes (for big files)
-holidays = holidayNYSE(2019)
 ```
 
-# Read PurpleAir files
+## Read files
 
 ``` r
-# Set the directory path
-directory_path <- "/Users/heba/Desktop/Uni/Lim Lab/Purple Air"
+dataset <- fread(paste0(preprocessing_directory, "/final_dataset.csv"))
 
-# Get a list of files that start with "purple_air_sanfran_"
-file_list <- list.files(directory_path, pattern = "purple_air_sanfran_")
+# devtools::install_github("heba-razzak/createDataDict")
+# library(createDataDict)
+# 
+# print_data_dict(dataset)
+# # get dataframe for descriptions
+# descriptions <- descriptions_df(dataset)
+# 
+# # update descriptions dataframe
+# descriptions <- update_description(descriptions,
+#                                    c("time_stamp", "pm2.5_atm", "pm2.5_atm_a", "pm2.5_atm_b", "sensor_index", "dow", "hour", 
+#                                      "day", "month", "year", "wknd", "holiday", "building_area", "b_yes", "b_apartments", 
+#                                      "b_house", "b_NA", "b_residential", "b_terrace", "b_other", "road_length", "r_footway", 
+#                                      "r_residential", "r_service", "r_secondary", "r_primary", "r_tertiary", "r_steps", 
+#                                      "r_path", "r_motorway_link", "r_other", "num_trees", "mean_speed", "median_speed", 
+#                                      "mean_congestion", "median_congestion", "weatherstation", "station_distance", 
+#                                      "station_elevation", "x", "y", "z", "temp_fahrenheit", "rel_humidity", 
+#                                      "wind_direction", "wind_speed"),
+#                                    c("Timestamp of the measurement", 
+#                                      "PM2.5 concentration from the air sensor", 
+#                                      "PM2.5 concentration from channel A of the air sensor", 
+#                                      "PM2.5 concentration from channel B of the air sensor", 
+#                                      "Unique identifier for the sensor", 
+#                                      "Day of the week (1 = Sunday, 2 = Monday, ...)", 
+#                                      "Hour of the day (0-23)", 
+#                                      "Day of the month", 
+#                                      "Month of the year", 
+#                                      "Year of the measurement", 
+#                                      "Weekend indicator (1 if weekend, 0 otherwise)", 
+#                                      "Holiday indicator (1 if holiday, 0 otherwise)", 
+#                                      "Total building area in square meters around the sensor", 
+#                                      "Count of buildings classified as 'yes'", 
+#                                      "Count of apartments", 
+#                                      "Count of houses", 
+#                                      "Count of buildings with NA classification", 
+#                                      "Count of residential buildings", 
+#                                      "Count of terrace buildings", 
+#                                      "Count of other types of buildings", 
+#                                      "Total length of roads in meters around the sensor", 
+#                                      "Length of footways in meters around the sensor", 
+#                                      "Length of residential roads in meters around the sensor", 
+#                                      "Length of service roads in meters around the sensor", 
+#                                      "Length of secondary roads in meters around the sensor", 
+#                                      "Length of primary roads in meters around the sensor", 
+#                                      "Length of tertiary roads in meters around the sensor", 
+#                                      "Length of steps in meters around the sensor", 
+#                                      "Length of paths in meters around the sensor", 
+#                                      "Length of motorway links in meters around the sensor", 
+#                                      "Length of other types of roads in meters around the sensor", 
+#                                      "Number of trees around the sensor", 
+#                                      "Mean speed of vehicles in mph", 
+#                                      "Median speed of vehicles in mph", 
+#                                      "Mean congestion ratio", 
+#                                      "Median congestion ratio", 
+#                                      "Weather station identifier", 
+#                                      "Distance to the weather station in meters", 
+#                                      "Elevation of the weather station in meters", 
+#                                      "X-coordinate of the weather station", 
+#                                      "Y-coordinate of the weather station", 
+#                                      "Z-coordinate of the weather station", 
+#                                      "Temperature in Fahrenheit", 
+#                                      "Relative humidity in percentage", 
+#                                      "Wind direction in degrees", 
+#                                      "Wind speed in mph"))
+# 
+# # Print data dictionary
+# print_data_dict(dataset, data_title="Final Dataset", descriptions=descriptions, show_na = FALSE)
 
-# Initialize an empty list to store dataframes
-data_list <- list()
-
-# Loop through each file and read it into a dataframe
-for (file in file_list) {
-  file_path <- file.path(directory_path, file)
-  data <- fread(file_path)
-  data_list[[file]] <- data
-}
-
-# Combine all dataframes into one
-purpleair <- bind_rows(data_list)
-
-# Print the first few rows of the combined dataframe
-head(purpleair)
+library(skimr)
+s <- skim(dataset, .data_name = "Final Dataset")
+# 
+# skim(dataset) %>%
+#   dplyr::select(skim_type, skim_variable, n_missing)
+# 
+s
 ```
 
-# Read Uber Files (2018)
+|                                                  |               |
+|:-------------------------------------------------|:--------------|
+| Name                                             | Final Dataset |
+| Number of rows                                   | 204717        |
+| Number of columns                                | 46            |
+| Key                                              | NULL          |
+| \_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_   |               |
+| Column type frequency:                           |               |
+| numeric                                          | 45            |
+| POSIXct                                          | 1             |
+| \_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_ |               |
+| Group variables                                  | None          |
+
+Data summary
+
+**Variable type: numeric**
+
+| skim_variable     | n_missing | complete_rate |      mean |       sd |        p0 |       p25 |       p50 |       p75 |      p100 | hist  |
+|:------------------|----------:|--------------:|----------:|---------:|----------:|----------:|----------:|----------:|----------:|:------|
+| pm2.5_atm         |         0 |             1 |      8.56 |    14.65 |      0.00 |      2.09 |      5.16 |      9.80 |    775.81 | ▇▁▁▁▁ |
+| pm2.5_atm_a       |         0 |             1 |      8.60 |    14.64 |      0.00 |      2.08 |      5.24 |      9.85 |    772.85 | ▇▁▁▁▁ |
+| pm2.5_atm_b       |         0 |             1 |      8.53 |    14.77 |      0.00 |      1.95 |      5.09 |      9.81 |    778.78 | ▇▁▁▁▁ |
+| sensor_index      |         0 |             1 |  19192.21 |  8744.02 |   2031.00 |  17939.00 |  19727.00 |  23083.00 |  44089.00 | ▂▂▇▁▁ |
+| dow               |         0 |             1 |      3.99 |     2.00 |      1.00 |      2.00 |      4.00 |      6.00 |      7.00 | ▇▅▃▃▇ |
+| hour              |         0 |             1 |     11.48 |     6.93 |      0.00 |      5.00 |     11.00 |     18.00 |     23.00 | ▇▇▆▇▇ |
+| day               |         0 |             1 |     15.97 |     8.79 |      1.00 |      8.00 |     16.00 |     24.00 |     31.00 | ▇▇▇▇▇ |
+| month             |         0 |             1 |      7.41 |     3.43 |      1.00 |      5.00 |      8.00 |     11.00 |     12.00 | ▅▃▃▅▇ |
+| year              |         0 |             1 |   2018.87 |     0.33 |   2017.00 |   2019.00 |   2019.00 |   2019.00 |   2019.00 | ▁▁▁▁▇ |
+| wknd              |         0 |             1 |      0.28 |     0.45 |      0.00 |      0.00 |      0.00 |      1.00 |      1.00 | ▇▁▁▁▃ |
+| holiday           |         0 |             1 |      0.02 |     0.15 |      0.00 |      0.00 |      0.00 |      0.00 |      1.00 | ▇▁▁▁▁ |
+| building_area     |         0 |             1 | 224489.37 | 57328.85 | 108505.98 | 179825.58 | 207181.01 | 235771.51 | 359600.77 | ▁▇▅▁▂ |
+| b_yes             |         0 |             1 |   1234.61 |   381.24 |    486.00 |    938.00 |   1359.00 |   1543.00 |   2112.00 | ▅▃▇▇▁ |
+| b_apartments      |         0 |             1 |     43.93 |    62.92 |      0.00 |      1.00 |     13.00 |     57.00 |    324.00 | ▇▁▁▁▁ |
+| b_house           |         0 |             1 |     39.70 |    85.37 |      0.00 |      0.00 |      3.00 |     44.00 |    395.00 | ▇▁▁▁▁ |
+| b_NA              |         0 |             1 |     11.36 |    15.67 |      0.00 |      2.00 |      7.00 |     11.00 |     78.00 | ▇▂▁▁▁ |
+| b_residential     |         0 |             1 |      5.96 |    16.12 |      0.00 |      0.00 |      1.00 |      3.00 |    119.00 | ▇▁▁▁▁ |
+| b_terrace         |         0 |             1 |      0.68 |     2.48 |      0.00 |      0.00 |      0.00 |      0.00 |    109.00 | ▇▁▁▁▁ |
+| b_other           |         0 |             1 |     16.19 |    11.38 |      0.00 |      6.00 |     15.00 |     23.00 |     46.00 | ▇▅▆▂▂ |
+| road_length       |         0 |             1 |  23692.54 |  5625.06 |   9577.75 |  22259.28 |  24057.43 |  27139.96 |  37168.87 | ▃▁▇▆▁ |
+| r_footway         |         0 |             1 |    158.19 |   115.96 |      9.00 |     73.00 |    149.00 |    182.00 |    536.00 | ▇▇▃▁▁ |
+| r_residential     |         0 |             1 |     59.27 |    17.17 |     23.00 |     43.00 |     57.00 |     76.00 |     85.00 | ▂▆▃▃▇ |
+| r_service         |         0 |             1 |     50.21 |    51.88 |      3.00 |     17.00 |     31.00 |     62.00 |    190.00 | ▇▂▁▁▁ |
+| r_secondary       |         0 |             1 |     22.77 |    28.37 |      0.00 |      6.00 |     11.00 |     22.00 |    103.00 | ▇▂▁▁▂ |
+| r_primary         |         0 |             1 |     17.12 |    12.94 |      0.00 |      7.00 |     16.00 |     31.00 |     43.00 | ▇▇▃▆▂ |
+| r_tertiary        |         0 |             1 |     13.94 |    12.11 |      0.00 |      2.00 |     10.00 |     26.00 |     40.00 | ▇▃▂▂▂ |
+| r_steps           |         0 |             1 |      8.85 |     7.25 |      0.00 |      2.00 |      8.00 |     14.00 |     50.00 | ▇▃▁▁▁ |
+| r_path            |         0 |             1 |      2.49 |     4.71 |      0.00 |      0.00 |      0.00 |      2.00 |     21.00 | ▇▁▁▁▁ |
+| r_motorway_link   |         0 |             1 |      3.11 |     5.04 |      0.00 |      0.00 |      0.00 |      5.00 |     17.00 | ▇▂▂▁▁ |
+| r_other           |         0 |             1 |     13.04 |    17.40 |      0.00 |      4.00 |      6.00 |     12.00 |     68.00 | ▇▁▁▁▁ |
+| num_trees         |         0 |             1 |     13.12 |    27.67 |      0.00 |      0.00 |      2.00 |     21.00 |    138.00 | ▇▁▁▁▁ |
+| mean_speed        |         0 |             1 |     23.26 |     7.39 |      6.07 |     18.47 |     21.69 |     25.80 |     68.53 | ▃▇▁▁▁ |
+| median_speed      |         0 |             1 |     22.87 |     7.76 |      6.07 |     18.46 |     21.39 |     24.83 |     68.55 | ▃▇▁▁▁ |
+| mean_congestion   |         0 |             1 |      0.79 |     0.08 |      0.25 |      0.73 |      0.79 |      0.85 |      1.37 | ▁▂▇▁▁ |
+| median_congestion |         0 |             1 |      0.83 |     0.08 |      0.25 |      0.77 |      0.83 |      0.89 |      1.37 | ▁▁▇▁▁ |
+| weatherstation    |         0 |             1 |      1.99 |     0.12 |      1.00 |      2.00 |      2.00 |      2.00 |      2.00 | ▁▁▁▁▇ |
+| station_distance  |         0 |             1 |  15497.79 |  2229.51 |  11949.99 |  13453.66 |  14670.40 |  17418.57 |  21350.90 | ▇▇▅▅▁ |
+| station_elevation |         0 |             1 |      4.97 |     0.23 |      3.00 |      5.00 |      5.00 |      5.00 |      5.00 | ▁▁▁▁▇ |
+| x                 |         0 |             1 |     -0.42 |     0.00 |     -0.42 |     -0.42 |     -0.42 |     -0.42 |     -0.42 | ▂▂▇▅▃ |
+| y                 |         0 |             1 |     -0.67 |     0.00 |     -0.67 |     -0.67 |     -0.67 |     -0.67 |     -0.67 | ▃▇▃▁▂ |
+| z                 |         0 |             1 |      0.61 |     0.00 |      0.61 |      0.61 |      0.61 |      0.61 |      0.61 | ▁▇▆▇▁ |
+| temp_fahrenheit   |         0 |             1 |     58.76 |     7.78 |     35.00 |     54.00 |     58.00 |     63.00 |     97.00 | ▁▇▅▁▁ |
+| rel_humidity      |         0 |             1 |     69.76 |    15.02 |      9.22 |     61.69 |     72.02 |     80.54 |    100.00 | ▁▁▃▇▃ |
+| wind_direction    |         0 |             1 |    204.92 |    94.90 |      0.00 |    128.00 |    253.85 |    281.54 |    360.00 | ▃▃▂▇▃ |
+| wind_speed        |         0 |             1 |      8.70 |     5.76 |      0.00 |      4.08 |      8.00 |     12.67 |     33.00 | ▇▆▃▁▁ |
+
+**Variable type: POSIXct**
+
+| skim_variable | n_missing | complete_rate | min        | max                 | median              | n_unique |
+|:--------------|----------:|--------------:|:-----------|:--------------------|:--------------------|---------:|
+| time_stamp    |         0 |             1 | 2018-01-01 | 2019-12-31 22:00:00 | 2019-07-10 21:00:00 |    17450 |
+
+# Remove any unnecessary features
 
 ``` r
-# Set the directory path
-directory_path <- "/Users/heba/Desktop/Uni/Lim Lab/Uber/Speeds"
-
-# Get a list of files that start with "movement..."
-# file_list <- list.files(directory_path, pattern = "movement-speeds-hourly-san-francisco-2018")
-file_list <- c("movement-speeds-hourly-san-francisco-2018-1.csv","movement-speeds-hourly-san-francisco-2018-2.csv",
-               "movement-speeds-hourly-san-francisco-2018-3.csv")
-# Initialize an empty list to store dataframes
-data_list_2018 <- list()
-file = file_list[1]
-# Loop through each file and read it into a dataframe
-for (file in file_list) {
-  file_path <- file.path(directory_path, file)
-  data <- fread(file_path)
-  data <- data %>% select(utc_timestamp,osm_way_id,speed_mph_mean)
-  data <- data[complete.cases(data), ]
-  # data$utc_timestamp <- ymd_hms(data$utc_timestamp)
-  data$osm_way_id <- as.character(data$osm_way_id)
-  data_list_2018[[file]] <- data
-}
-
-# Combine all dataframes into one
-uber_data <- rbindlist(data_list_2018, use.names = TRUE, fill = TRUE)
-
-# Print the first few rows of the combined dataframe
-head(uber_data)
-```
-
-# Free flow speeds
-
-``` r
-uber_data <- uber_data %>%
-  group_by(osm_way_id) %>%
-  mutate(free_flow_speed = quantile(speed_mph_mean, 0.95)) %>%
-  ungroup()
-```
-
-# Calculate congestion ratio for each observation (1 = free flow speed, \<1 = congestion, \>1 = faster speed)
-
-``` r
-uber_data$congestion_ratio <- uber_data$speed_mph_mean / uber_data$free_flow_speed
-```
-
-``` r
-head(uber_data)
-```
-
-# Aggregate congestion ratio by timestamp
-
-``` r
-road_congestion_hourly <- uber_data %>%
-  group_by(osm_way_id, utc_timestamp) %>%
-  summarise(
-    congestion_ratio_mean = mean(congestion_ratio, na.rm = TRUE)
-  ) %>%
-  ungroup()
-```
-
-# Visualize congestion by hour and day
-
-``` r
-uber_data$local_timestamp <- with_tz(uber_data$utc_timestamp, tzone = "America/Los_Angeles")
-
-road_congestion_dailyhourly <- uber_data %>%
-  mutate(DayOfWeek = factor(wday(local_timestamp)),
-         HourOfDay = hour(local_timestamp)) %>%
-  group_by(DayOfWeek, HourOfDay) %>%
-  summarize(congestion_ratio_mean = mean(congestion_ratio)) %>%
-  ungroup()
-```
-
-``` r
-(road_congestion_dailyhourly)
-```
-
-``` r
-heatmap_plot <- ggplot(road_congestion_dailyhourly, aes(x = HourOfDay, y = DayOfWeek, fill = congestion_ratio_mean)) +
-  geom_tile() +
-  scale_fill_gradientn(
-  colours=c("red", "yellow", "green")) +
-  labs(
-    title = "Congestion Heatmap (local time)",
-    x = "Hour of Day",
-    y = "Day of Week"
-  ) +
-  theme_minimal() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
-
-print(heatmap_plot)
-```
-
-``` r
-road_congestion_hourly$local_timestamp <- with_tz(road_congestion_hourly$utc_timestamp, tzone = "America/Los_Angeles")
-
-road_congestion_hm <- road_congestion_hourly %>%
-  mutate(DayOfWeek = factor(wday(local_timestamp, label = TRUE, abbr = FALSE)),
-         HourOfDay = hour(local_timestamp)) %>%
-  group_by(DayOfWeek, HourOfDay) %>%
-  summarize(congestion_ratio_mean = mean(congestion_ratio_mean)) %>%
-  ungroup()
-
-road_congestion_hourly <- road_congestion_hourly %>% select(-local_timestamp)
-
-heatmap_plot <- ggplot(road_congestion_hm, aes(x = HourOfDay, y = DayOfWeek, fill = congestion_ratio_mean)) +
-  geom_tile() +
-  scale_fill_gradientn(
-  colours=c("red", "yellow", "green")) +
-  labs(
-    title = "Congestion Heatmap (local time)",
-    x = "Hour of Day",
-    y = "Day of Week"
-  ) +
-  theme_minimal() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
-
-print(heatmap_plot)
-```
-
-########################################## 
-
-# Temperature data
-
-``` r
-temps <- read.csv("/Users/heba/Desktop/Uni/Lim Lab/SanFranTemp.csv")
-temps <- temps %>% mutate(Date = ymd(Date)) %>% filter(year(Date) %in% c(2018,2019)) %>%
-  mutate(datetime = ymd_hms(paste(Date, Time))) %>%
-  select(datetime, everything(), -Date, -Time)
-```
-
-``` r
-uber_data <- uber_data %>%
-  group_by(osm_way_id) %>%
-  mutate(free_flow_speed = quantile(speed_mph_mean, 0.95)) %>%
-  ungroup()
-```
-
-# read spatial data
-
-``` r
-path = '/Users/heba/Desktop/Uni/Lim Lab/uber_purpleair/'
-# selected_ways_sf <- st_read(paste0(path,'selected_ways_sf.shp'))
-purpleairs_sf <- st_read(paste0(path,'purpleairs_sf.shp'))
-# uber_ways_sf <- st_read(paste0(path,'uber_ways_sf.shp'))
-# purpleairs_buffers <- st_read(paste0(path,'purpleairs_buffers.shp'))
-# intersections <- st_read(paste0(path,'intersections.shp'))
-
-purpleair_uber_roads <- st_read(paste0(path,'purpleair_uber_roads.shp'))
-purpleair_road_length <- st_read(paste0(path,'purpleair_road_length.shp'))
-purpleair_buildings <- st_read(paste0(path,'purpleair_buildings.shp'))
-purpleair_building_areas <- st_read(paste0(path,'purpleair_building_areas.shp'))
-
-
-sanfran_roads <- st_read("/Users/heba/Desktop/Uni/Lim Lab/OSM/sanfranarea_roads_osm.shp")
-```
-
-# Converting timestamps to a date-time format
-
-``` r
-purpleair$time_stamp <- ymd_hms(purpleair$time_stamp)
-```
-
-# Convert the OSM way IDs in the Uber speeds data to character type
-
-``` r
-# uber_data$osm_way_id <- as.character(uber_data$osm_way_id)
-```
-
-# Calculate free-flow speed (95th percentile of speed) for each osm_way_id
-
-``` r
-free_flow_speeds <- uber_data %>% select(osm_way_id, speed_mph_mean) %>%
-  group_by(osm_way_id) %>%
-  summarise(free_flow_speed = quantile(speed_mph_mean, 0.95)) %>%
-  ungroup()
-```
-
-# Join free flow speeds to Uber ways spatial data
-
-``` r
-purpleair_uber_roads$osm_id <- as.character(purpleair_uber_roads$osm_id)
-
-speed_map <- purpleair_uber_roads %>% left_join(free_flow_speeds, by = c("osm_id" = "osm_way_id"))
-```
-
-# Visualize the speed map
-
-``` r
-mapview(speed_map, zcol="free_flow_speed")
-```
-
-# Join free_flow_speeds with uber_data
-
-``` r
-uber_data <- uber_data %>%
-  left_join(free_flow_speeds, by = "osm_way_id")
-```
-
-# Calculate congestion ratio for each observation (1 = free flow speed, \<1 = congestion, \>1 = faster speed)
-
-``` r
-uber_data$congestion_ratio <- uber_data$speed_mph_mean / uber_data$free_flow_speed
-```
-
-# Aggregate congestion ratio by timestamp
-
-``` r
-road_congestion_hourly <- uber_data %>%
-  group_by(osm_way_id, utc_timestamp) %>%
-  summarise(
-    congestion_ratio_mean = mean(congestion_ratio, na.rm = TRUE)
-  ) %>%
-  ungroup()
-```
-
-# Visualize congestion by hour and day
-
-``` r
-road_congestion_hourly$local_timestamp <- with_tz(road_congestion_hourly$utc_timestamp, tzone = "America/Los_Angeles")
-
-road_congestion_hm <- road_congestion_hourly %>%
-  mutate(DayOfWeek = factor(wday(local_timestamp, label = TRUE, abbr = FALSE)),
-         HourOfDay = hour(local_timestamp)) %>%
-  group_by(DayOfWeek, HourOfDay) %>%
-  summarize(congestion_ratio_mean = mean(congestion_ratio_mean)) %>%
-  ungroup()
-
-road_congestion_hourly <- road_congestion_hourly %>% select(-local_timestamp)
-
-heatmap_plot <- ggplot(road_congestion_hm, aes(x = HourOfDay, y = DayOfWeek, fill = congestion_ratio_mean)) +
-  geom_tile() +
-  scale_fill_gradientn(
-  colours=c("red", "yellow", "green")) +
-  labs(
-    title = "Congestion Heatmap (local time)",
-    x = "Hour of Day",
-    y = "Day of Week"
-  ) +
-  theme_minimal() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
-
-print(heatmap_plot)
-```
-
-# Maps (Select Relevant Layers)
-
-``` r
-purpleair_buildings <- purpleair_buildings %>%
-  mutate(building_type = type) %>%
-  select(-type) %>%
-  mutate(building_type = coalesce(building_type, 'NA'))
-
-purpleair_uber_roads <- purpleair_uber_roads %>%
-  mutate(road_type = type) %>%
-  select(-type) %>%
-  mutate(road_type = coalesce(road_type, 'NA'))
-
-pa_sensors <- purpleairs_sf %>% select(sensr_d)
-
-palette1 <- colorRampPalette(c("pink"))
-palette2 <- colorRampPalette(c("lightgrey"))
-palette3 <- colorRampPalette(c("red", "green"))
-
-# Create maps with custom color palettes
-map1 <- mapview(purpleair_buildings)
-map2 <- mapview(purpleair_uber_roads, zcol = "road_type", col.regions = palette2,col = palette2)
-map3 <- mapview(speed_map, zcol = "free_flow_speed", col.regions = palette3, col = palette3)
-map4 <- mapview(pa_sensors, col.regions = "purple", legend = FALSE)
-
-# Combine the maps
-combined_map <- map1 + map2 + map3 + map4
-
-combined_map
-```
-
-# Join PurpleAir Uber Temp OSM
-
-``` r
-# purpleair_uber_roads - "osm_id","name","type","sensr_d","dt_crtd","last_sn","geometry"
-# road_congestion_hourly - "osm_way_id","utc_timestamp","congestion_ratio_mean"
-# purpleair_road_length - "sensr_d","type","road_length","geometry"
-# purpleair_building_areas - "sensr_d","type","total_area","geometry"
-# purpleair - "time_stamp","pm1.0_atm","pm2.5_atm","pm2.5_atm_a","pm2.5_atm_b","sensor_id"
-# temps - "datetime","TemperatureFahrenheit","TemperatureCelsius"
-
-purpleair2 <- purpleair %>% select(time_stamp,sensor_id,pm2.5_atm)
-temps2 <- temps %>% select(datetime,TemperatureFahrenheit)
-purpleair_building_areas2 <- st_drop_geometry(purpleair_building_areas) %>% select(sensr_d,type,total_area)
-purpleair_road_length2 <- st_drop_geometry(purpleair_road_length) %>% select(sensr_d,type,road_length = rd_lngt)
-# road_congestion_hourly # osm_way_id, utc_timestamp, congestion_ratio_mean
-purpleair_uber <- st_drop_geometry(purpleair_uber_roads) %>% select(sensr_d,osm_id)
-
-# pivot area by building type
-# purpleair_building_areas %>%
-#   group_by(sensr_d, type) %>%
-#   summarize(total_area = sum(total_area)) %>%
-#   pivot_wider(names_from = type, values_from = total_area, names_prefix = "area_")
-
-purpleair_building_areas3 <- purpleair_building_areas2 %>%
-  group_by(sensr_d) %>%
-  summarize(total_area = sum(total_area)) %>% ungroup()
-
-# pivot length by road type
-purpleair_road_length3 <- purpleair_road_length2 %>%
-  group_by(sensr_d, type) %>%
-  summarize(road_length = sum(road_length)) %>%
-  pivot_wider(names_from = type, values_from = road_length, names_prefix = "length_") %>% ungroup()
-
-purpleair_road_length4 <- purpleair_road_length2 %>%
-  group_by(sensr_d) %>%
-  summarize(road_length = sum(road_length)) %>% ungroup()
-
-pa_temp <- left_join(purpleair, temps, by = c("time_stamp" = "datetime"))
-pa_congestion <- left_join(purpleair_uber, road_congestion_hourly, by = c("osm_id" = "osm_way_id"))
-
-# check how i calculate this
-# alternative to getting the mean of mean
-pa_congestion <- pa_congestion %>% group_by(sensr_d, utc_timestamp) %>% summarize(mean_congestion = mean(congestion_ratio_mean)) %>% ungroup()
-
-result <- left_join(pa_temp, pa_congestion, by = c("time_stamp" = "utc_timestamp", "sensor_id" = "sensr_d"))
-result <- left_join(result, purpleair_building_areas3, by = c("sensor_id" = "sensr_d"))
-result <- left_join(result, purpleair_road_length3, by = c("sensor_id" = "sensr_d"))
-
-# head(result, 10)
-```
-
-# Analyze missing values
-
-``` r
-all_na_columns <- names(result)[colSums(is.na(result)) == nrow(result)]
-cat("columns with all NA:\n",all_na_columns)
-result <- result %>% dplyr::select(-all_of(all_na_columns))
-
-missing_count <- colSums(is.na(result))
-non_missing_count <- colSums(!is.na(result))
-
-data_quality_summary <- data.frame(
-  Column = colnames(result),
-  Status = factor(rep(c("Missing", "Non-Missing"), each = ncol(result))),
-  Count = c(missing_count, non_missing_count)
-)
-
-ggplot(data_quality_summary, aes(x = Column, fill = Status, y = Count)) +
-  geom_bar(stat = "identity", position = "stack") +
-  xlab("Column") +
-  ylab("Count") +
-  scale_fill_manual(values = c("Missing" = "red", "Non-Missing" = "green")) +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
-```
-
-# Handle Missing Values
-
-``` r
-# Since most missing values are lengths of roads
-# Fill missing "length" values with 0
-
-# column names starting with length
-cols_to_fill_na <- grep("^length_", names(result), value = TRUE)
-
-# Replace NA with 0 in selected columns
-result <- result %>%
-  mutate_at(vars(all_of(cols_to_fill_na)), ~replace_na(., 0))
-
-# replace missing mean_congestion with 1 (no traffic)
-result <- result %>%
-  mutate_at(vars(mean_congestion), ~replace_na(., 1))
-```
-
-# Number of purple air sensors
-
-``` r
-unique_sensor_count <- result %>%
-  select(sensor_id) %>%
-  distinct() %>%
-  n_distinct()
-
-cat("Number of PurpleAir sensors: ",unique_sensor_count)
-```
-
-# Create date variables for prediction
-
-``` r
-result$local_timestamp <- with_tz(result$time_stamp, tzone = "America/Los_Angeles")
-
-# # no holidays in june so it doesnt make sense to use for this month
-# result$local_date <- as.Date(result$local_timestamp)
-# result$is_holiday <- result$local_date %in% as.Date(holidays)
-
-result$day_of_week <- wday(result$local_timestamp)
-result$hour <- hour(result$local_timestamp)
-result$day <- day(result$local_timestamp)
-result$month <- month(result$local_timestamp)
-result$year <- year(result$local_timestamp)
-result$is_weekend <- ifelse(result$day_of_week %in% c(6, 7), 1, 0) # 6 and 7 represent the weekend
-
-head(result)
-```
-
-# Check readings where channel A and B disagree
-
-## plot of channel A vs B
-
-``` r
-result$pm2.5dif <- abs(result$pm2.5_atm_a-result$pm2.5_atm_b)
-
-look_into_this <- result %>% filter(pm2.5dif > 15) %>% select(sensor_id,pm2.5dif, pm2.5_atm_a,pm2.5_atm_b,TemperatureCelsius,mean_congestion,local_timestamp )
-
-result <- result %>% select(-pm2.5dif) # remove dif from result
-
-head(look_into_this)
-
-ggplot(result, aes(x = pm2.5_atm_a, y = pm2.5_atm_b)) +
-  geom_point() +
-  labs(x = "Channel A PM2.5",
-       y = "Channel B PM2.5") +
-  theme_minimal()
-```
-
-``` r
-# Create a subset of the data for each sensor_id
-sensor_ids <- unique(result$sensor_id)
-
-# Create a list to store the plots
-plots <- list()
-
-# Loop through each sensor_id and create a plot
-for (sensor_id in sensor_ids) {
-  subset_data <- subset(result, sensor_id == sensor_id)
-
-  # Create a plot for pm2.5_atm_a
-  plot_a <- ggplot(subset_data, aes(x = local_timestamp, y = pm2.5dif)) +
-    geom_line() +
-    labs(title = paste("Sensor ID:", sensor_id, "- pm2.5_diff"),
-         x = "Local Timestamp",
-         y = "pm2.5_atm_a")
-
-  # Add the combined plot to the list of plots
-  plots[[sensor_id]] <- plot_a
-}
-
-# Display the plots
-# plots
-```
-
-# Final dataset for model
-
-``` r
-result <- result %>% select(-pm1.0_atm,-pm2.5_atm_a,-pm2.5_atm_b,-sensor_id,-TemperatureCelsius,-time_stamp)
-glimpse(result)
+dataset <- dataset %>% select(-pm1.0_atm,-pm2.5_atm_a,-pm2.5_atm_b,-sensor_id,-TemperatureCelsius,-time_stamp)
+glimpse(dataset)
 ```
 
 # Split Train and Test data
@@ -505,18 +183,18 @@ suppressPackageStartupMessages({
 set.seed(42)
 
 # Define the time point at which to split the data (e.g., 70% for training)
-split_time <- quantile(result$local_timestamp, 0.7)
+split_time <- quantile(dataset$local_timestamp, 0.7)
 
 # Split the data into training and testing sets based on the split_time
-train_data <- subset(result, local_timestamp <= split_time)
-test_data <- subset(result, local_timestamp > split_time)
+train_data <- subset(dataset, local_timestamp <= split_time)
+test_data <- subset(dataset, local_timestamp > split_time)
 
 train_data <- train_data %>% select(-local_timestamp)
 test_data <- test_data %>% select(-local_timestamp)
 
-# split <- sample.split(result$pm2.5_atm, SplitRatio = 0.7)
-# train_data <- subset(result, split == TRUE)
-# test_data  <- subset(result, split == FALSE)
+# split <- sample.split(dataset$pm2.5_atm, SplitRatio = 0.7)
+# train_data <- subset(dataset, split == TRUE)
+# test_data  <- subset(dataset, split == FALSE)
 ```
 
 # Random Forest Model
@@ -621,7 +299,7 @@ xgb.plot.importance(importance_matrix = importance_scores)
 # Investigate PM2.5 readings
 
 ``` r
-hist_data <- hist(result$pm2.5_atm, breaks = 50, xlab = "PM2.5 Concentration", xaxt = 'n')
+hist_data <- hist(dataset$pm2.5_atm, breaks = 50, xlab = "PM2.5 Concentration", xaxt = 'n')
 axis(side = 1, at = hist_data$mids, labels = hist_data$mids)
 
 hist_table <- data.frame(
