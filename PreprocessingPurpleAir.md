@@ -323,6 +323,62 @@ purpleair_filtered_subset <- purpleair_filtered_subset %>% filter(sensor_index %
 # Remove unnecessary columns
 purpleair_filtered_subset <- purpleair_filtered_subset %>% select(-pm2.5_atm_a, -pm2.5_atm_b)
 
+# Define the range of your timestamps
+start_time <- min(purpleair_filtered_subset$time_stamp, na.rm = TRUE)
+end_time <- max(purpleair_filtered_subset$time_stamp, na.rm = TRUE)
+
+# Generate a sequence of all possible hourly timestamps within the range
+all_timestamps <- seq(from = start_time, to = end_time, by = "hour")
+
+n_timestamps <- length(all_timestamps)
+
+# Sensors missing data
+avail_data <- purpleair_filtered_subset %>%
+  group_by(sensor_index) %>%
+  summarize(avail_data_percent = round(100*n() / n_timestamps,2)) %>%
+  arrange((avail_data_percent))
+
+sensors80 <- avail_data %>% filter(avail_data_percent>80)
+
+purpleair_filtered_subset <- purpleair_filtered_subset %>%
+  filter(sensor_index %in% sensors80$sensor_index)
+```
+
+## Plot random sensors
+
+``` r
+# Plot 4 random sensors
+subset_sensors <- sample(unique(purpleair_filtered_subset$sensor_index), 4)
+filtered_data <- purpleair_filtered_subset %>% filter(sensor_index %in% subset_sensors)
+
+# Create the faceted plot
+ggplot(filtered_data, aes(x = time_stamp, y = pm2.5_atm, color = as.factor(sensor_index))) +
+  geom_line() +
+  labs(
+    x = "Date", 
+    y = "PM2.5 ATM", 
+    title = "PM2.5 Levels Over Time by Sensor"
+  ) +
+  facet_wrap(~ sensor_index, scales = "fixed", ncol = 2) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    plot.title = element_text(hjust = 0.5),
+    legend.position = "none"
+  )
+```
+
+![](PreprocessingPurpleAir_files/figure-gfm/plot-random-sensors-1.png)<!-- -->
+
+## Remove sensor 20349 (mostly zeros)
+
+``` r
+purpleair_filtered_subset <- purpleair_filtered_subset %>% filter(sensor_index != 20349)
+```
+
+## Save Filtered Data to CSV
+
+``` r
 # Save filtered data
 write.csv(purpleair_filtered_subset, file = file.path(preprocessing_directory, "purpleair_filtered_2018-2019.csv"), row.names = FALSE)
 ```
@@ -331,7 +387,7 @@ write.csv(purpleair_filtered_subset, file = file.path(preprocessing_directory, "
 
 ``` r
 # https://www.epa.gov/sites/default/files/2016-04/documents/2012_aqi_factsheet.pdf
-avg_pm25 <- purpleair_filtered %>%
+avg_pm25 <- purpleair_filtered_subset %>%
   group_by(sensor_index) %>%
   summarize(avg_pm25 = mean(pm2.5_atm))
 
@@ -342,15 +398,24 @@ AQI <- c("Good", "Moderate", "Unhealthy for Sensitive Groups", "Unhealthy", "Ver
 # Create a new column with color intervals
 avg_pm25$AQI <- cut(avg_pm25$avg_pm25, breaks = intervals, labels = AQI, include.lowest = TRUE)
 
-pa_avgpm25 <- merge(purpleair_sensors, avg_pm25, by="sensor_index")
+pa_avgpm25 <- merge(purpleair_sensors, avg_pm25, by = "sensor_index")
 
-custom_colors <- c("green", "yellow", "orange", "red", "deeppink3", "darkred")
+# Define a color palette function
+color_palette <- colorFactor(palette = c("green", "yellow", "orange", "red", "deeppink3", "darkred"), 
+                             levels = AQI)
 
-# Create a new column with color intervals
-pa_avgpm25$AQI <- cut(pa_avgpm25$avg_pm25, breaks = intervals, labels = AQI, include.lowest = TRUE)
-
-# Plot the average PM2.5 for each sensor with custom colors
-mapview(pa_avgpm25, zcol = "AQI", col.regions = custom_colors, legend = TRUE, layer.name = "Average Air Quality Index")
+# Plot the average PM2.5 for each sensor with leaflet
+leaflet(pa_avgpm25) %>%
+  addProviderTiles("CartoDB") %>% 
+  addCircleMarkers(
+    radius = 2, 
+    color = ~color_palette(AQI), 
+    fillOpacity = 0.7, 
+    stroke = FALSE,
+    label = ~paste("Sensor Index:", sensor_index, "<br>Average PM2.5:", round(avg_pm25, 2), "<br>AQI:", AQI)
+  ) %>%
+  addLegend("bottomright", pal = color_palette, values = AQI, 
+            title = "Air Quality Index", opacity = 1)
 ```
 
 ![](PreprocessingPurpleAir_files/figure-gfm/map-AQI-1.png)<!-- -->
