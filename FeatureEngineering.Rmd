@@ -12,6 +12,7 @@ osm_directory <- readr::read_file("inputs/osm_directory.txt")
 ```
 
 ## Load required libraries
+
 ```{r, load-libraries, message = FALSE, warning = FALSE}
 library(dplyr) # For data manipulation
 library(data.table) # Faster than dataframes (for big files)
@@ -26,6 +27,7 @@ library(forecast) # To impute missing traffic data
 ```
 
 ## Read files
+
 ```{r, read-files}
 traffic_data <- fread(paste0(preprocessing_directory, "/traffic.csv"))
 purpleair_data <- fread(paste0(preprocessing_directory,"/purpleair_filtered_2018-2019.csv"))
@@ -36,7 +38,27 @@ osm_trees <- st_read(paste0(osm_directory, "/bayarea_trees_osm.gpkg"), quiet = T
 osm_buildings <- st_read(paste0(osm_directory, "/bayarea_buildings_osm.gpkg"), quiet = TRUE)
 ```
 
+```{r, filter-for-testing, eval = FALSE, include = FALSE}
+bbox <- c(xmin = -122.55, ymin = 37.82, xmax = -122.35, ymax = 37.7)
+bbox_polygon <- st_as_sfc(st_bbox(bbox))
+st_crs(bbox_polygon) <- 4326
+sanfran <- st_intersection(osm_roads, bbox_polygon)
+
+traffic_data <- traffic_data %>% filter(osm_way_id %in% unique(sanfran$osm_id))
+purpleair_data <- purpleair_data %>% filter(sensor_index %in% unique(sanfran$sensor_index))
+osm_roads <- osm_roads %>% filter(sensor_index %in% unique(sanfran$sensor_index))
+osm_trees <- osm_trees %>% filter(sensor_index %in% unique(sanfran$sensor_index))
+osm_buildings <- osm_buildings %>% filter(sensor_index %in% unique(sanfran$sensor_index))
+purpleair_sensors <- purpleair_sensors %>% filter(sensor_index %in% unique(sanfran$sensor_index))
+weather_data <- weather_data %>% filter(station %in% unique(purpleair_sensors$weatherstation))
+
+# When testing save files to different folder
+preprocessing_directory <- paste0(preprocessing_directory,"/test")
+st_write(purpleair_sensors, paste0(preprocessing_directory, "/pasensors_weatherstations.gpkg"), append=FALSE, quiet = TRUE)
+```
+
 ## Round sensor coordinates to 3 decimal places
+
 ```{r, round-3dp}
 # Round lat and lon
 purpleair_sensors <- st_set_precision(purpleair_sensors, precision=1000)
@@ -44,6 +66,7 @@ st_write(purpleair_sensors, paste0(preprocessing_directory, "/pasensors_weathers
 ```
 
 ## Map difference in precision
+
 ```{r, map-3dp}
 purpleair_original <- st_read(paste0(preprocessing_directory, "/pasensors_weatherstations.gpkg"), quiet = TRUE)
 purpleair_sensors <- st_read(paste0(preprocessing_directory, "/pasensors_weatherstations3dp.gpkg"), quiet = TRUE)
@@ -58,22 +81,8 @@ leaflet() %>%
   setView(lng = -122.44, lat =  37.76, zoom = 13)
 ```
 
-```{r,filter-for-testing, eval=FALSE, include=FALSE}
-bbox <- c(xmin = -122.55, ymin = 37.82, xmax = -122.35, ymax = 37.7)
-bbox_polygon <- st_as_sfc(st_bbox(bbox))
-st_crs(bbox_polygon) <- 4326
-sanfran <- st_intersection(osm_roads, bbox_polygon)
-
-traffic_data <- traffic_data %>% filter(osm_way_id %in% unique(sanfran$osm_id))
-purpleair_data <- purpleair_data %>% filter(sensor_index %in% unique(sanfran$sensor_index))
-osm_roads <- osm_roads %>% filter(sensor_index %in% unique(sanfran$sensor_index))
-osm_trees <- osm_trees %>% filter(sensor_index %in% unique(sanfran$sensor_index))
-osm_buildings <- osm_buildings %>% filter(sensor_index %in% unique(sanfran$sensor_index))
-purpleair_sensors <- purpleair_sensors %>% filter(sensor_index %in% unique(sanfran$sensor_index))
-weather_data <- weather_data %>% filter(station %in% unique(purpleair_sensors$weatherstation))
-```
-
 ## Create cartesian coordinates for purple air sensors
+
 ```{r, geo-features}
 # Create features to represent lat and lon
 # https://medium.com/@manishsingh7163/converting-from-latitude-longitude-to-cartesian-coordinates-9ddf30841c45
@@ -97,6 +106,7 @@ purpleair_sensors <- purpleair_sensors %>%
 ```
 
 ## Create final dataset temporal features
+
 ```{r, temporal-features}
 # Get holidays for 2018 and 2019
 holidays <- as.Date(c(holidayNYSE(2019), holidayNYSE(2018)))
@@ -122,6 +132,7 @@ final_dataset <- purpleair_data %>%
 # building areas in m^2
 building_areas <- osm_buildings %>%
   select(sensor_index, building) %>%
+  mutate(building = ifelse(is.na(building), "NA", building)) %>%
   group_by(sensor_index, building) %>%
   summarize(building_area = sum(st_area(geom)), .groups = 'drop') %>%
   st_drop_geometry()
@@ -136,7 +147,6 @@ building_areas$building_area <- round(building_areas$building_area,2)
 fwrite(building_areas, paste0(preprocessing_directory,"/building_areas.csv"))
 ```
 
-
 ## Areas of building types for each PurpleAir sensor
 
 ```{r, building-dist}
@@ -148,7 +158,7 @@ building_areas <- building_areas %>%
   pivot_wider(names_from = building, 
               values_from = building_area, values_fill = list(building_area = 0))
 
-# Calculate the total counts for each building type
+# Calculate the total areas for each building type
 total_areas <- building_areas %>%
   summarize(across(-sensor_index, sum)) %>%
   gather(building, total_area) %>%
@@ -217,10 +227,11 @@ final_dataset <- final_dataset %>%
 
 ## Calculate road lengths for each PurpleAir sensor
 
-```{r, road-length}
+```{r, road-lengths}
 # Calculate road lengths
 road_lengths <- osm_roads %>%
   select(sensor_index, highway) %>%
+  mutate(highway = ifelse(is.na(highway), "NA", highway)) %>%
   group_by(sensor_index, highway) %>%
   summarize(road_length = sum(st_length(geom)), .groups = 'drop') %>%
   st_drop_geometry()
@@ -235,12 +246,13 @@ road_lengths$road_length <- round(road_lengths$road_length,2)
 fwrite(road_lengths, paste0(preprocessing_directory,"/road_lengths.csv"))
 ```
 
-## Count road types for each PurpleAir sensor
+## Length of road types for each PurpleAir sensor
 
 ```{r, roads-dist}
 # Read road lengths
 road_lengths <- fread(paste0(preprocessing_directory,"/road_lengths.csv"))
 
+# Pivot road lengths
 road_lengths <- road_lengths %>% 
   pivot_wider(names_from = highway, 
               values_from = road_length, values_fill = list(road_length = 0))
@@ -288,8 +300,9 @@ road_dist <- ggplot(top_n_counts,
 road_dist
 ```
 
-## Road counts data
-```{r, road-counts}
+## Road length data
+
+```{r, road-length}
 # add prefix for road columns
 total_lengths <- total_lengths %>% mutate(highway = paste0("r_", highway))
 road_lengths <- road_lengths %>%
@@ -305,7 +318,7 @@ road_lengths <- road_lengths %>%
   mutate(r_other = rowSums(select(., -sensor_index, -one_of(relevant_roads)))) %>%
   select(sensor_index, all_of(relevant_roads), r_other)
 
-# Merge road counts with final_dataset
+# Merge road lengths with final_dataset
 final_dataset <- final_dataset %>%
   left_join(road_lengths, by = "sensor_index") %>% 
   mutate(across(starts_with("r_"), ~ replace_na(.x, 0)))
@@ -323,7 +336,7 @@ tree_counts <- osm_trees %>% st_drop_geometry() %>%
 fwrite(tree_counts, paste0(preprocessing_directory,"/tree_counts.csv"))
 ```
 
-```{r, trees-f}
+```{r, trees}
 # Read trees counts
 tree_counts <- fread(paste0(preprocessing_directory,"/tree_counts.csv"))
 
@@ -335,34 +348,6 @@ final_dataset <- final_dataset %>%
 
 ## Traffic preprocessing
 ```{r, aggregate-traffic}
-# Calculate road lengths
-road_lengths <- osm_roads %>%
-  select(sensor_index, highway) %>%
-  group_by(sensor_index, highway) %>%
-  summarize(road_length = sum(st_length(geom)), .groups = 'drop') %>%
-  st_drop_geometry()
-  
-# remove units from road_length
-attributes(road_lengths$road_length) = NULL
-
-# round length
-road_lengths$road_length <- round(road_lengths$road_length,2)
-
-road_lengths <- road_lengths %>% 
-  pivot_wider(names_from = highway, 
-              values_from = road_length, values_fill = list(road_length = 0))
-
-# Calculate the total lengths for each road type
-total_lengths <- road_lengths %>%
-  summarize(across(-sensor_index, sum)) %>%
-  gather(highway, total_length) %>%
-  mutate(percentage = total_length / sum(total_length) * 100) %>%
-  arrange(desc(percentage))
-
-
-
-
-
 # Get associated purpleair sensors and roads
 sensor_roads <- osm_roads %>% 
   select(sensor_index, osm_id, highway) %>% 
@@ -398,44 +383,20 @@ traffic_agg <- traffic_agg %>%
               values_from = c(mean_speed, median_speed, mean_congestion, median_congestion),
               names_sep = "_")
 
-
-o <- osm_roads %>% select(osm_id, highway) %>% st_drop_geometry
-o$osm_id <- as.integer(o$osm_id)
-t <- traffic_data %>% select(osm_way_id,speed_mph_mean) 
-tt <- t %>% left_join(o, by=c("osm_way_id" = "osm_id"))
-ttt <- tt %>% group_by(highway) %>% 
-  summarize(mean_speed = round(mean(speed_mph_mean, na.rm = TRUE),2), .groups = 'drop') %>% 
-  arrange(desc(mean_speed))
-print(ttt)
-
-# highway         mean_speed
-# motorway	      60.19			
-# motorway_link		40.37			
-# trunk		        31.89			
-# construction		28.96			
-# primary	        26.96			
-# trunk_link	    26.02			
-# secondary	      24.69			
-# primary_link	  23.17			
-# tertiary	      20.97			
-# living_street	  19.78	
-# unclassified	  19.66			
-# secondary_link	18.07			
-# cycleway	      16.66			
-# service	        15.86			
-# residential	    15.52			
-# tertiary_link	  15.17			
-# pedestrian	    15.16			
-
-
 # Save traffic agg
 fwrite(traffic_agg, paste0(preprocessing_directory,"/traffic_agg.csv"))
+
+# Merge traffic data with final dataset
+final_dataset <- final_dataset %>%
+  left_join(traffic_agg, by = c("time_stamp" = "utc_timestamp", "sensor_index" = "sensor_index"))
 ```
 
-## Impute missing traffic data
+## Full timeseries traffic data
 ```{r, fill-traffic-data}
+# NOT USING IMPUTATION - Link just for reference #
 # Seasonal Trend Decomposition using Loess (STL) Imputation
 # https://medium.com/@aaabulkhair/data-imputation-demystified-time-series-data-69bc9c798cb7
+
 # Define the range of your timestamps
 start_time <- min(final_dataset$time_stamp, na.rm = TRUE)
 end_time <- max(final_dataset$time_stamp, na.rm = TRUE)
@@ -462,8 +423,9 @@ traffic_complete <- traffic_complete %>% arrange(sensor_index, utc_timestamp)
 
 ```{r, missing-speed-plot}
 # Aggregate missing speed by sensors
+
 missing_speeds <- traffic_complete %>%
-  mutate(missing_speed = ifelse(is.na(mean_speed), 1, 0)) %>%
+  mutate(missing_speed = ifelse(if_all(starts_with("mean_speed"), is.na), 1, 0)) %>%
   group_by(sensor_index) %>%
   summarize(
     missing_percentage = 100 * round(sum(missing_speed) / n(), 3),
@@ -488,108 +450,8 @@ ggplot(missing_speeds, aes(x = range, y = count)) +
   theme_minimal()
 ```
 
-## Impute missing speed data
-
-```{r, impute-traffic}
-# Function to impute missing values using STL
-impute_stl <- function(data, variable) {
-  ts_data <- ts(data[[variable]], frequency = 24)  # assuming hourly data with daily seasonality
-  imputed_ts <- na_seasplit(ts_data)
-  return(as.numeric(imputed_ts))
-}
-
-# Apply imputation for each relevant variable
-traffic_complete <- traffic_complete %>%
-  group_by(sensor_index) %>%
-  group_modify(~ {
-    .x <- .x %>%
-      mutate(
-        imputed_mean_speed = impute_stl(.x, "mean_speed"),
-        imputed_median_speed = impute_stl(.x, "median_speed"),
-        imputed_mean_congestion = impute_stl(.x, "mean_congestion"),
-        imputed_median_congestion = impute_stl(.x, "median_congestion")
-      )
-    return(.x)
-  }) %>%
-  ungroup()
-```
-
-## Plot Imputed Speeds
-```{r, plot-imputed-speeds}
-# Plot for 1 sensor and date range (sensors with missing values: 16903, 1742, 16947)
-date1 = "2018-01-01"
-date2 = "2018-01-10"
-
-# Pick which sensor to plot (i=1 has most missing values)
-i=1
-
-# Get sensors ordered by most missing mean speed
-missing_speed_sensors <- traffic_complete %>% 
-  filter(as.Date(utc_timestamp) >= as.Date(date1)) %>% 
-  filter(as.Date(utc_timestamp) <= as.Date(date2)) %>% 
-  group_by(sensor_index) %>%
-  summarize(missing_mean_speed = sum(is.na(mean_speed)), .groups = 'drop') %>%
-  arrange(desc(missing_mean_speed))
-
-# ith sensor with missing values
-sensor = missing_speed_sensors$sensor_index[i]
-
-# Data for plotting
-plot_data <- traffic_complete %>%
-  select(sensor_index, utc_timestamp, mean_speed, imputed_mean_speed) %>%
-  arrange(sensor_index, utc_timestamp) %>%
-  filter(sensor_index == sensor) %>%
-  filter(as.Date(utc_timestamp) >= as.Date(date1)) %>% 
-  filter(as.Date(utc_timestamp) <= as.Date(date2))
-
-# Plot
-impute_plot <- ggplot() +
-  geom_line(data = plot_data,
-            aes(x = utc_timestamp, y = imputed_mean_speed, color = "Imputed", linetype = "Imputed")) +
-  geom_point(data = plot_data,
-             aes(x = utc_timestamp, y = imputed_mean_speed, color = "Imputed"), na.rm = TRUE) +
-  geom_point(data = plot_data[!is.na(plot_data$mean_speed),],
-             aes(x = utc_timestamp, y = mean_speed, color = "Original"), na.rm = TRUE) +
-  geom_line(data = plot_data[!is.na(plot_data$mean_speed),],
-            aes(x = utc_timestamp, y = mean_speed, color = "Original", linetype = "Original"), na.rm = TRUE) +
-  labs(title = "Mean Speed (imputed vs original)",
-       x = "Timestamp",
-       y = "Speed",
-       color = "Speed Type",
-       linetype = "Speed Type") +
-  theme_minimal() +
-  scale_color_manual(values = c("Original" = "blue", "Imputed" = "red")) +
-  scale_linetype_manual(values = c("Original" = "dotted", "Imputed" = "dotted"))
-
-# View plot
-impute_plot
-```
-
-```{r, update-imputed-traffic}
-# Update original columns with imputed values where NA
-traffic_complete <- traffic_complete %>%
-  mutate(
-    mean_speed = ifelse(is.na(mean_speed), imputed_mean_speed, mean_speed),
-    median_speed = ifelse(is.na(median_speed), imputed_median_speed, median_speed),
-    mean_congestion = ifelse(is.na(mean_congestion), imputed_mean_congestion, mean_congestion),
-    median_congestion = ifelse(is.na(median_congestion), imputed_median_congestion, median_congestion)
-  ) %>%
-  select(-imputed_mean_speed, -imputed_median_speed, -imputed_mean_congestion, -imputed_median_congestion)
-
-# Save traffic complete
-fwrite(traffic_complete, paste0(preprocessing_directory,"/traffic_complete.csv"))
-
-# Merge traffic data with final dataset
-final_dataset <- final_dataset %>%
-  left_join(traffic_complete, by = c("time_stamp" = "utc_timestamp", "sensor_index" = "sensor_index"))
-```
-
 ## Weather preprocessing
 ```{r, weather}
-# Weather per sensor
-# Drop lon and lat from weather data
-weather_data <- weather_data %>% select(-lon, -lat)
-
 # Define the range of your timestamps
 start_time <- min(final_dataset$time_stamp, na.rm = TRUE)
 end_time <- max(final_dataset$time_stamp, na.rm = TRUE)
@@ -609,7 +471,7 @@ weather_complete <- complete_time_series %>%
   left_join(weather_data, by = c("station", "timestamp"))
 
 # Arrange data
-weather_complete <- weather_complete %>% arrange(station, timestamp)
+weather_complete <- weather_complete %>% select(-lon, -lat) %>% arrange(station, timestamp)
 ```
 
 ## Plot showing missing weather data
@@ -654,44 +516,22 @@ ggplot(missing_weather, aes(x = range, y = count, fill = variable)) +
   theme_minimal()
 ```
 
-## Impute missing weather data
+## Join weather data
 
-```{r, impute-weather}
-# Function to impute missing values using STL
-impute_stl <- function(data, variable) {
-  ts_data <- ts(data[[variable]], frequency = 24)  # assuming hourly data with daily seasonality
-  imputed_ts <- na_seasplit(ts_data)
-  return(as.numeric(imputed_ts))
-}
-
-# Apply imputation for each relevant variable
-weather_complete <- weather_complete %>%
-  group_by(station) %>%
-  group_modify(~ {
-    .x <- .x %>%
-      mutate(
-        temp_fahrenheit = impute_stl(.x, "temp_fahrenheit"),
-        rel_humidity = impute_stl(.x, "rel_humidity"),
-        wind_direction = impute_stl(.x, "wind_direction"),
-        wind_speed = impute_stl(.x, "wind_speed")
-      )
-    return(.x)
-  }) %>%
-  ungroup()
+```{r, join-weather}
+# Drop lon and lat from weather data
+weather_data <- weather_data %>% select(-lon, -lat)
 
 # Join weather data with purpleair_sensors to get the weatherstation-related data
-weather_complete <- purpleair_sensors %>%
-  left_join(weather_complete, by = c("weatherstation" = "station"))
+weather_data <- purpleair_sensors %>%
+  left_join(weather_data, by = c("weatherstation" = "station"))
 
 # Convert station to numeric as factor
-weather_complete$weatherstation <- as.numeric(as.factor(weather_complete$weatherstation))
-
-# Save weather complete
-fwrite(weather_complete, paste0(preprocessing_directory,"/weather_complete.csv"))
+weather_data$weatherstation <- as.numeric(as.factor(weather_data$weatherstation))
 
 # Merge weather with final dataset
 final_dataset <- final_dataset %>%
-  left_join(weather_complete, by = c("sensor_index" = "sensor_index", "time_stamp" = "timestamp"))
+  left_join(weather_data, by = c("sensor_index" = "sensor_index", "time_stamp" = "timestamp"))
 ```
 
 ## Save final dataset

@@ -23,7 +23,7 @@ library(data.table) # Faster than dataframes (for big files)
 ## Read files
 ```{r, read-files}
 dataset <- fread(paste0(preprocessing_directory, "/final_dataset.csv"))
-
+length(unique(dataset$sensor_index))
 # devtools::install_github("heba-razzak/createDataDict")
 # library(createDataDict)
 # 
