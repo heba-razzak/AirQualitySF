@@ -24,7 +24,7 @@ library(ggplot2)
 ## Read files
 ```{r, read-files, eval=TRUE}
 purpleair_data <- fread(paste0(preprocessing_directory,"/purpleair_filtered_2018-2019.csv"))
-purpleair_sensors <- st_read(paste0(purpleair_directory, "/purpleair_sensors.gpkg"), quiet = TRUE)
+purpleair_sensors <- st_read(paste0(preprocessing_directory, "/pasensors_weatherstations.gpkg"), quiet = TRUE)
 ```
 
 ## Filter PurpleAir sensors
@@ -41,7 +41,7 @@ crs_ca <- 3310
 filtered_sensors <- st_transform(filtered_sensors, crs_ca)
 
 # buffer radius in meters
-buffer <- 500
+buffer <- 1000
 purpleairs_buffers <- st_buffer(filtered_sensors, dist=buffer, nQuadSegs=2)
 
 # change crs back to original

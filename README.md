@@ -36,13 +36,9 @@ To achieve this goal, the project integrates and analyzes diverse datasets sourc
 
     Reading individual monthly Uber CSV files, select necessary columns, filter uber data near PurpleAir sensors, calculate Free Flow Speeds and Congestion Ratio, save combined traffic file. Visualization of free flow speeds and traffic congestion.
 
--   [Feature Engineering](FeatureEngineering.md): Creating new features
+-   [Feature Engineering](FeatureEngineering.md): Creating new features and building final dataset
 
-    Calculate building areas, road lengths, and number of trees surrounding PurpleAir sensors. Create new columns to represent temporal aspects such as day, hour, and weekend. Create feature for lat and lon. Impute missing values for traffic and weather.
-
--   [Data Integration](DataIntegration.md): Create final dataset
-
-    Integrating cleaned and processed data from various sources to create the final dataset.
+    Calculate building areas, road lengths, and number of trees surrounding PurpleAir sensors. Create new columns to represent temporal aspects such as day, hour, and weekend. Create feature for lat and lon. Integrating cleaned and processed data from various sources to create the final dataset.
 
 -   [Model Building](ModelBuilding.md): Developing the model for predicting PM2.5 concentrations.
 

@@ -18,8 +18,6 @@ library(tidyr) # Pivot data
 library(leaflet) # Interactive maps
 library(ggplot2) # Plots
 library(timeDate) # For holidays
-library(imputeTS) # To impute missing traffic data
-library(forecast) # To impute missing traffic data
 ```
 
 ## Read files
@@ -58,7 +56,13 @@ leaflet() %>%
   setView(lng = -122.44, lat =  37.76, zoom = 13)
 ```
 
-![](FeatureEngineering_files/figure-gfm/map-3dp-1.png)<!-- -->
+    ## Fontconfig warning: ignoring UTF-8: not a valid region tag
+
+<figure>
+<img src="FeatureEngineering_files/map-3dp-1.png"
+alt="plot of chunk map-3dp" />
+<figcaption aria-hidden="true">plot of chunk map-3dp</figcaption>
+</figure>
 
 ## Create cartesian coordinates for purple air sensors
 
@@ -180,7 +184,11 @@ building_dist <- ggplot(top_n_counts,
 building_dist
 ```
 
-![](FeatureEngineering_files/figure-gfm/building-dist-1.png)<!-- -->
+<figure>
+<img src="FeatureEngineering_files/building-dist-1.png"
+alt="plot of chunk building-dist" />
+<figcaption aria-hidden="true">plot of chunk building-dist</figcaption>
+</figure>
 
 ## Buildings area data
 
@@ -281,7 +289,11 @@ road_dist <- ggplot(top_n_counts,
 road_dist
 ```
 
-![](FeatureEngineering_files/figure-gfm/roads-dist-1.png)<!-- -->
+<figure>
+<img src="FeatureEngineering_files/roads-dist-1.png"
+alt="plot of chunk roads-dist" />
+<figcaption aria-hidden="true">plot of chunk roads-dist</figcaption>
+</figure>
 
 ## Road length data
 
@@ -353,9 +365,9 @@ traffic_sensors <- sensor_roads %>%
 ```
 
     ## Warning in inner_join(., traffic_data, by = c(osm_id = "osm_way_id")): Detected an unexpected many-to-many relationship between `x` and `y`.
-    ## ℹ Row 1 of `x` matches multiple rows in `y`.
-    ## ℹ Row 692118 of `y` matches multiple rows in `x`.
-    ## ℹ If a many-to-many relationship is expected, set `relationship =
+    ## i Row 1 of `x` matches multiple rows in `y`.
+    ## i Row 7292133 of `y` matches multiple rows in `x`.
+    ## i If a many-to-many relationship is expected, set `relationship =
     ##   "many-to-many"` to silence this warning.
 
 ``` r
@@ -444,7 +456,12 @@ ggplot(missing_speeds, aes(x = range, y = count)) +
   theme_minimal()
 ```
 
-![](FeatureEngineering_files/figure-gfm/missing-speed-plot-1.png)<!-- -->
+<figure>
+<img src="FeatureEngineering_files/missing-speed-plot-1.png"
+alt="plot of chunk missing-speed-plot" />
+<figcaption aria-hidden="true">plot of chunk
+missing-speed-plot</figcaption>
+</figure>
 
 ## Weather preprocessing
 
@@ -513,7 +530,12 @@ ggplot(missing_weather, aes(x = range, y = count, fill = variable)) +
   theme_minimal()
 ```
 
-![](FeatureEngineering_files/figure-gfm/missing-weather-plot-1.png)<!-- -->
+<figure>
+<img src="FeatureEngineering_files/missing-weather-plot-1.png"
+alt="plot of chunk missing-weather-plot" />
+<figcaption aria-hidden="true">plot of chunk
+missing-weather-plot</figcaption>
+</figure>
 
 ## Join weather data
 
@@ -527,9 +549,9 @@ weather_data <- purpleair_sensors %>%
 ```
 
     ## Warning in left_join(., weather_data, by = c(weatherstation = "station")): Detected an unexpected many-to-many relationship between `x` and `y`.
-    ## ℹ Row 1 of `x` matches multiple rows in `y`.
-    ## ℹ Row 17493 of `y` matches multiple rows in `x`.
-    ## ℹ If a many-to-many relationship is expected, set `relationship =
+    ## i Row 1 of `x` matches multiple rows in `y`.
+    ## i Row 195420 of `y` matches multiple rows in `x`.
+    ## i If a many-to-many relationship is expected, set `relationship =
     ##   "many-to-many"` to silence this warning.
 
 ``` r

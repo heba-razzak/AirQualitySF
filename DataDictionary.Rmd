@@ -3,6 +3,27 @@ title: "Data Dictionary"
 output: github_document
 ---
 
+```{r}
+data <- airquality
+include_stats = NULL
+data_title=""
+var_types = NULL
+print(generate_summary_stats(airquality))
+
+```
+```{r}
+print(generate_summary_stats(airquality))
+x <- airquality$Day
+x <- airquality$Solar.R
+hist_info <- hist(x, breaks = 8, plot = FALSE)
+bin_width <- unique(diff(hist_info$breaks))
+hist_density <- hist_info$density
+scaled_density <- round(hist_density * 5 * bin_width, 2)
+cli::spark_bar(scaled_density)
+
+hist(x, breaks = 8)
+```
+
 ```{r, load-libraries, message = FALSE, warning = FALSE, echo = FALSE}
 library(dplyr) # For data manipulation
 library(sf) # For working with spatial data
