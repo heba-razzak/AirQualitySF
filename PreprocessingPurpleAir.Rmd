@@ -415,15 +415,17 @@ for (i in 1:nrow(sensor_zero_readings)) {
 
 ## View plots of sensors with >20% zeros
 
-```{r, zero-plots}
+```{r, zero-plots, echo=FALSE, out.width="49%", out.height="20%", fig.show='hold', fig.align='center'}
 # compare plots of different thresholds
+img_paths <- c()
 for (i in 1:nrow(sensor_zero_readings)) {
   s <- sensor_zero_readings$sensor_index[[i]]
   pz <- round(sensor_zero_readings$pct_zeros[i], 0)
   img_path <- file.path(preprocessing_directory, "plots",
                         paste0("pct", pz, "_sensor", s, ".png"))
-  knitr::include_graphics(img_path)
+  img_paths <- c(img_paths, img_path)
 }
+knitr::include_graphics(img_paths)
 ```
 
 ## Remove sensor 20349 based on plots

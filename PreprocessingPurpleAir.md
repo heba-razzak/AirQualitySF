@@ -524,16 +524,7 @@ for (i in 1:nrow(sensor_zero_readings)) {
 
 ## View plots of sensors with \>20% zeros
 
-``` r
-# compare plots of different thresholds
-for (i in 1:nrow(sensor_zero_readings)) {
-  s <- sensor_zero_readings$sensor_index[[i]]
-  pz <- round(sensor_zero_readings$pct_zeros[i], 0)
-  img_path <- file.path(preprocessing_directory, "plots",
-                        paste0("pct", pz, "_sensor", s, ".png"))
-  knitr::include_graphics(img_path)
-}
-```
+<img src="Preprocessing/plots/pct48_sensor20349.png" width="49%" height="20%" style="display: block; margin: auto;" /><img src="Preprocessing/plots/pct21_sensor21847.png" width="49%" height="20%" style="display: block; margin: auto;" /><img src="Preprocessing/plots/pct50_sensor26733.png" width="49%" height="20%" style="display: block; margin: auto;" /><img src="Preprocessing/plots/pct25_sensor26959.png" width="49%" height="20%" style="display: block; margin: auto;" />
 
 ## Remove sensor 20349 based on plots
 
