@@ -3,14 +3,16 @@ title: "Model Building"
 output: github_document
 ---
 
+```{r, testing, eval = FALSE, include = FALSE}
+# preprocessing_directory <- paste0(readr::read_file("inputs/preprocessing_directory.txt"),"/test")
+```
+
 # Model Building
 
 ```{r setup, include=FALSE}
 preprocessing_directory <- readr::read_file("inputs/preprocessing_directory.txt")
-```
-
-```{r, testing, eval = FALSE, include = FALSE}
-# preprocessing_directory <- paste0(readr::read_file("inputs/preprocessing_directory.txt"),"/test")
+model_directory <- readr::read_file("inputs/model_directory.txt")
+options(scipen = 999)
 ```
 
 ## Load required libraries
@@ -23,140 +25,598 @@ library(tidyr) # pivot
 library(ggplot2) # plots
 library(data.table) # Faster than dataframes (for big files)
 library(randomForest) # random forest model
+library(xgboost)
+library(mlr)
 library(caTools) # Split train and test groups
+library(car)
 # devtools::install_github("heba-razzak/createDataDict")
 # library(createDataDict)
 ```
 
-## Read files
-```{r, read-files}
+```{r}
 dataset <- fread(paste0(preprocessing_directory, "/final_dataset.csv"))
 dataset <- dataset %>% rename(target = pm2.5_atm)
-cat("Number of sensors: ", length(unique(dataset$sensor_index)))
 ```
 
-# Split Train and Test data
-
-```{r}
-# Determine the index for the 70% split
-split_index <- floor(0.7 * nrow(arrange(dataset, time_stamp)))
-
-# Find the date at this index
-split_time <- dataset %>% arrange(time_stamp) %>% 
-  pull(time_stamp) %>% .[floor(0.7 * nrow(dataset))]
-
-# # Split the data into training and testing sets based on the split_time
-# train <- subset(dataset, time_stamp <= split_time)
-# test <- subset(dataset, time_stamp > split_time)
-# 
-# # remove timestamp and sensor index
-# train <- train %>% select(-time_stamp, -sensor_index)
-# test <- test %>% select(-time_stamp, -sensor_index)
-
-rm(dataset)
-```
-
-# LR
+## Linear Regression
 
 ```{r}
 # Linear Regression
+dataset_lr <- dataset %>%
+  select(-starts_with("mean_speed"),
+         -starts_with("median_speed"),
+         -starts_with("mean_congestion"),
+         -starts_with("median_congestion"))
 
-dataset_lr <- na.omit(dataset)
+dataset_lr <- na.omit(dataset_lr)
 
-# Log-transform the target variable
-dataset_lr <- dataset_lr %>%
-  mutate(log_target = log1p(target))
+dataset_lr <- dataset_lr %>% filter(target < 150)
 
 # Determine the index for the 70% split
 split_index <- floor(0.7 * nrow(arrange(dataset_lr, time_stamp)))
 
 # Find the date at this index
-split_time <- dataset_lr %>% arrange(time_stamp) %>% 
+split_time <- dataset_lr %>% arrange(time_stamp) %>%
   pull(time_stamp) %>% .[floor(0.7 * nrow(dataset_lr))]
 
 # Split the data into training and testing sets based on the split_time
-train <- subset(dataset_lr, time_stamp <= split_time) %>% dplyr::select(-time_stamp, -sensor_index, -target)
-test <- subset(dataset_lr, time_stamp > split_time) %>% dplyr::select(-time_stamp, -sensor_index, -log_target)
+train <- subset(dataset_lr, time_stamp <= split_time) %>% dplyr::select(-time_stamp, -sensor_index)
+test <- subset(dataset_lr, time_stamp > split_time)
 
-# true labels for test data
+# Save timestamp and sensor index for identifying problem areas
+test_time_sensor <- test %>% select(time_stamp, sensor_index)
+
+# Remove timestamp and sensor index from test set for model training
+test <- test %>% dplyr::select(-time_stamp, -sensor_index)
+
+# True labels for test data
 test_label <- test$target
 
-# drop target cols from test
+# Drop target column from test
 test <- test %>% dplyr::select(-target)
 
 # Linear Regression Model
-linear_model <- lm(log_target ~ ., data = train)
+linear_model <- lm(target ~ ., data = train)
+
+# Multicollinearity
+vif_values <- vif(linear_model)
+print("Variance Inflation Factors")
+print(vif_values)
+cat("--------------------------------------------------------------")
 
 # Summarize the model
+print("Model Summary")
 summary(linear_model)
+cat("--------------------------------------------------------------")
 
 # Make predictions
-log_predictions <- predict(linear_model, newdata = test)
-
-# Back-transform the predictions
-linear_predictions <- expm1(log_predictions)
+linear_predictions <- predict(linear_model, newdata = test)
 
 # Calculate performance metrics
 # Mean Absolute Error (MAE)
 mae_linear <- mean(abs(linear_predictions - test_label))
-print(paste("Linear Regression MAE:", mae_linear))
+cat("\nLinear Regression MAE:", mae_linear)
 
 # Mean Absolute Percentage Error (MAPE)
-mape_linear <- mean(abs((linear_predictions - test_label) / test_label)) * 100
-print(paste("Linear Regression MAPE:", mape_linear))
+# Replace zero values in test_label with a very small number
+mape_test_label <- ifelse(test_label == 0, 0.00001, test_label)
+
+# Calculate Mean Absolute Percentage Error (MAPE)
+mape_linear <- mean(abs((linear_predictions - mape_test_label) / mape_test_label)) * 100
+cat("\nLinear Regression MAPE:", mape_linear)
 
 # R-squared (R²)
 ss_res_linear <- sum((linear_predictions - test_label)^2)
 ss_tot_linear <- sum((test_label - mean(test_label))^2)
 r2_linear <- 1 - (ss_res_linear / ss_tot_linear)
-print(paste("Linear Regression R²:", r2_linear))
+cat("\nLinear Regression R²:", r2_linear)
 
 # Adjusted R-squared
 n_linear <- length(test_label)
-p_linear <- ncol(test) - 1  # assuming test_data doesn't include the target variable
+p_linear <- ncol(test)
 adj_r2_linear <- 1 - ((1 - r2_linear) * (n_linear - 1) / (n_linear - p_linear - 1))
-print(paste("Linear Regression Adjusted R²:", adj_r2_linear))
+cat("\nLinear Regression Adjusted R²:", adj_r2_linear)
 
 # Root Mean Squared Error (RMSE)
 rmse_linear <- sqrt(mean((linear_predictions - test_label)^2))
-print(paste("Linear Regression RMSE:", rmse_linear))
+cat("\nLinear Regression RMSE:", rmse_linear, "\n")
 
-# # Compare with XGBoost performance
-# print(paste("XGBoost RMSE:", rmse))
-# print(paste("XGBoost MAE:", mae))
-# print(paste("XGBoost MAPE:", mape))
-# print(paste("XGBoost R²:", r2))
-# print(paste("XGBoost Adjusted R²:", adj_r2))
+# Create a dataframe with actual values, predicted values, absolute differences, and identification columns
+results <- test %>%
+  mutate(
+    Actual = test_label,
+    Predicted = linear_predictions,
+    AbsDifference = abs(test_label - linear_predictions)
+  ) %>%
+  bind_cols(test_time_sensor) %>% 
+  arrange(desc(AbsDifference))
 
+# Plot to show which days have the most errors
+error_by_day <- results %>%
+  mutate(date = as.Date(time_stamp)) %>%
+  group_by(date) %>%
+  summarize(TotalAbsDifference = sum(AbsDifference),
+            AvgAbsDifference = mean(AbsDifference),
+            MaxAbsDifference = max(AbsDifference),
+            AbsDifference90p = quantile(AbsDifference, 0.9)) %>%
+  arrange(date)
+
+# Plot average, maximum, and 90th percentile absolute differences
+ggplot(error_by_day, aes(x = date)) +
+  geom_line(aes(y = AvgAbsDifference, color = "Average Absolute Difference")) +
+  geom_line(aes(y = MaxAbsDifference, color = "Maximum Absolute Difference")) +
+  geom_line(aes(y = AbsDifference90p, color = "90th Percentile Absolute Difference")) +
+  labs(
+    title = "Absolute Differences Over Time",
+    x = "Date",
+    y = "Absolute Difference"
+  ) +
+  scale_color_manual(
+    values = c("Average Absolute Difference" = "blue",
+               "Maximum Absolute Difference" = "red",
+               "90th Percentile Absolute Difference" = "green")
+  ) +
+  theme_minimal()
+
+# Display the sorted results
+print(error_by_day)
+
+
+# Plot residuals
+residuals <- test_label - linear_predictions
+plot(residuals, main = "Residuals Plot", ylab = "Residuals", xlab = "Index", col = "blue", pch = 20)
+abline(h = 0, col = "red")
+
+# Histogram of residuals
+hist(residuals, breaks = 50, main = "Histogram of Residuals", xlab = "Residuals", col = "blue")
+
+# Plot predictions vs actual values
+plot(test_label, linear_predictions, main = "Predictions vs Actual Values", xlab = "Actual Values", ylab = "Predicted Values", col = "blue", pch = 19)
+abline(0, 1, col = "red")
+```
+
+## Log Linear Regression
+
+```{r}
+# Log Linear Regression
+dataset_loglr <- dataset %>%
+  select(-starts_with("mean_speed"),
+         -starts_with("median_speed"),
+         -starts_with("mean_congestion"),
+         -starts_with("median_congestion"))
+
+dataset_loglr <- na.omit(dataset_loglr)
+
+dataset_loglr <- dataset_loglr %>% filter(target < 150)
+
+# Determine the index for the 70% split
+split_index <- floor(0.7 * nrow(arrange(dataset_loglr, time_stamp)))
+
+# Find the date at this index
+split_time <- dataset_loglr %>% arrange(time_stamp) %>%
+  pull(time_stamp) %>% .[split_index]
+
+# Split the data into training and testing sets based on the split_time
+train <- subset(dataset_loglr, time_stamp <= split_time) %>% dplyr::select(-time_stamp, -sensor_index)
+test <- subset(dataset_loglr, time_stamp > split_time)
+
+# Save timestamp and sensor index for identifying problem areas
+test_time_sensor <- test %>% select(time_stamp, sensor_index)
+
+# Remove timestamp and sensor index from test set for model training
+test <- test %>% dplyr::select(-time_stamp, -sensor_index)
+
+# True labels for test data
+test_label <- test$target
+
+# Drop target column from test
+test <- test %>% dplyr::select(-target)
+
+# Log linear Regression Model
+loglr_model <- lm(log(1 + target) ~ ., data = train)
+
+# Multicollinearity
+vif_values <- vif(loglr_model)
+print("Variance Inflation Factors")
+print(vif_values)
+cat("--------------------------------------------------------------")
+
+# Summarize the model
+print("Model Summary")
+summary(loglr_model)
+cat("--------------------------------------------------------------")
+
+# Make log linear predictions
+loglr_predictions <- exp(predict(loglr_model, newdata = test) - 1)
+
+# Calculate performance metrics
+# Mean Absolute Error (MAE)
+mae_loglr <- mean(abs(loglr_predictions - test_label))
+cat("\nLog Linear Regression MAE:", mae_loglr)
+
+# Mean Absolute Percentage Error (MAPE)
+# Replace zero values in test_label with a very small number
+mape_test_label <- ifelse(test_label == 0, 0.00001, test_label)
+mape_loglr <- mean(abs((loglr_predictions - mape_test_label) / mape_test_label)) * 100
+cat("\nLog Linear Regression MAPE:", mape_loglr)
+
+# R-squared (R²)
+ss_res_loglr <- sum((loglr_predictions - test_label)^2)
+ss_tot_loglr <- sum((test_label - mean(test_label))^2)
+r2_loglr <- 1 - (ss_res_loglr / ss_tot_loglr)
+cat("\nLog Linear Regression R²:", r2_loglr)
+
+# Adjusted R-squared
+n_loglr <- length(test_label)
+p_loglr <- ncol(test)
+adj_r2_loglr <- 1 - ((1 - r2_loglr) * (n_loglr - 1) / (n_loglr - p_loglr - 1))
+cat("\nLog Linear Regression Adjusted R²:", adj_r2_loglr)
+
+# Root Mean Squared Error (RMSE)
+rmse_loglr <- sqrt(mean((loglr_predictions - test_label)^2))
+cat("\nLog Linear Regression RMSE:", rmse_loglr, "\n")
+
+# Create a dataframe with actual values, predicted values, absolute differences, and identification columns
+results <- test %>%
+  mutate(
+    Actual = test_label,
+    Predicted = loglr_predictions,
+    AbsDifference = abs(test_label - loglr_predictions)
+  ) %>%
+  bind_cols(test_time_sensor) %>% 
+  arrange(desc(AbsDifference))
+
+# Plot to show which days have the most errors
+error_by_day <- results %>%
+  mutate(date = as.Date(time_stamp)) %>%
+  group_by(date) %>%
+  summarize(TotalAbsDifference = sum(AbsDifference),
+            AvgAbsDifference = mean(AbsDifference),
+            MedianAbsDifference = quantile(AbsDifference, 0.5),
+            MaxAbsDifference = max(AbsDifference),
+            AbsDifference90p = quantile(AbsDifference, 0.9)) %>%
+  arrange(date)
+
+# Plot average, maximum, and 90th percentile absolute differences
+ggplot(error_by_day, aes(x = date)) +
+  geom_line(aes(y = AvgAbsDifference, color = "Average Absolute Difference")) +
+  geom_line(aes(y = MaxAbsDifference, color = "Maximum Absolute Difference")) +
+  geom_line(aes(y = AbsDifference90p, color = "90th Percentile Absolute Difference")) +
+  labs(
+    title = "Absolute Differences Over Time",
+    x = "Date",
+    y = "Absolute Difference"
+  ) +
+  scale_color_manual(
+    values = c("Average Absolute Difference" = "blue",
+               "Maximum Absolute Difference" = "red",
+               "90th Percentile Absolute Difference" = "green")
+  ) +
+  theme_minimal()
+
+# Display the sorted results
+print(error_by_day)
+
+# Plot residuals
+cat("Plotting residuals\n")
+residuals <- test_label - loglr_predictions
+plot(residuals, main = "Residuals Plot", ylab = "Residuals", xlab = "Index", col = "blue", pch = 20)
+abline(h = 0, col = "red")
+
+# Histogram of residuals
+hist(residuals, breaks = 50, main = "Histogram of Residuals", xlab = "Residuals", col = "blue")
+
+# Plot predictions vs actual values
+plot(test_label, loglr_predictions, main = "Predictions vs Actual Values", xlab = "Actual Values", ylab = "Predicted Values", col = "blue", pch = 19)
+abline(0, 1, col = "red")
 
 ```
 
-# XGBOOST
-```{r}
+```{}
+plot(linear_model)
 
-# Convert data to matrix format for xgboost
-train_matrix <- as.matrix(train %>% select(-target))
-test_matrix <- as.matrix(test %>% select(-target))
+```
+
+
+# XGBOOST
+
+```{}
+dataset <- fread(paste0(preprocessing_directory, "/final_dataset.csv"))
+dataset <- dataset %>% rename(target = pm2.5_atm)
+```
+
+```{r, eval = FALSE}
+# Transform dataset and save
+dataset_xgb <- dataset %>%
+  mutate(year = year - min(year))
+
+saveRDS(dataset_xgb, file = paste0(model_directory, "/dataset_xgb.rds"))
+
+```
+
+```{r, eval = FALSE}
+# Load transformed dataset
+dataset_xgb <- readRDS(paste0(model_directory, "/dataset_xgb.rds"))
+
+# Determine the index for the 70% split
+split_index <- floor(0.7 * nrow(arrange(dataset_xgb, time_stamp)))
+
+# Find the date at this index
+split_time <- dataset_xgb %>% arrange(time_stamp) %>%
+  pull(time_stamp) %>% .[split_index]
+
+# Split the data into training and testing sets based on the split_time
+train <- subset(dataset_xgb, time_stamp <= split_time)
+test <- subset(dataset_xgb, time_stamp > split_time)
+
+# Remove timestamp and sensor index from the features
+train <- train %>% select(-time_stamp, -sensor_index)
+test <- test %>% select(-time_stamp, -sensor_index)
+
+# Save split datasets
+saveRDS(dataset_xgb, file = paste0(model_directory, "/train.rds"))
+saveRDS(dataset_xgb, file = paste0(model_directory, "/test.rds"))
+
+train %>% filter(is.na(year))
+test %>% filter(is.na(year))
+```
+
+```{r}
+# Load split datasets
+train <- readRDS(paste0(model_directory, "/train.rds"))
+test <- readRDS(paste0(model_directory, "/test.rds"))
 
 # Extract labels
-train_labels <- train$target
-test_labels <- test$target
+train_labels <- train$log_target
+test_labels <- test$log_target
+
+# Remove log_target from features
+train_matrix <- as.matrix(train %>% select(-log_target))
+test_matrix <- as.matrix(test %>% select(-log_target))
+
+# Save matrices and labels
+saveRDS(dataset_xgb, file = paste0(model_directory, "/train_matrix.rds"))
+saveRDS(dataset_xgb, file = paste0(model_directory, "/test_matrix.rds"))
+saveRDS(dataset_xgb, file = paste0(model_directory, "/train_labels.rds"))
+saveRDS(dataset_xgb, file = paste0(model_directory, "/test_labels.rds"))
+```
+
+```{r}
+# Load matrices and labels
+train_matrix <- readRDS(paste0(model_directory, "/train_matrix.rds"))
+test_matrix <- readRDS(paste0(model_directory, "/test_matrix.rds"))
+train_labels <- readRDS(paste0(model_directory, "/train_labels.rds"))
+test_labels <- readRDS(paste0(model_directory, "/test_labels.rds"))
+
+# Scale data (optional, depends on the data)
+train_matrix <- scale(train_matrix)
+test_matrix <- scale(test_matrix)
 
 # Create DMatrix objects
 dtrain <- xgb.DMatrix(data = train_matrix, label = train_labels)
 dtest <- xgb.DMatrix(data = test_matrix, label = test_labels)
 
-# Apply log transformation
-train$log_target <- log1p(train$target)  # log1p is log(1 + x)
-test$log_target <- log1p(test$target)
+saveRDS(dataset_xgb, file = paste0(model_directory, "/dtrain.rds"))
+saveRDS(dataset_xgb, file = paste0(model_directory, "/dtest.rds"))
+```
 
-# Update training and testing matrices
-train_matrix <- as.matrix(train %>% select(-target, -log_target))
-test_matrix <- as.matrix(test %>% select(-target, -log_target))
+```{r}
+# Load DMatrix objects
+dtrain <- readRDS(paste0(model_directory, "/dtrain.rds"))
+dtest <- readRDS(paste0(model_directory, "/dtest.rds"))
 
-# scale data
-train_matrix <- scale(train_matrix)
-test_matrix <- scale(test_matrix)
+print("Initial Cross-Validation")
+
+# Initial cross-validation to find the best number of rounds
+params <- list(
+  booster = "gbtree",
+  objective = "reg:squarederror",
+  eta = 0.1,
+  gamma = 0,
+  max_depth = 6,
+  min_child_weight = 1,
+  subsample = 1,
+  colsample_bytree = 1
+)
+
+xgbcv <- xgb.cv(
+  params = params,
+  data = dtrain,
+  nrounds = 100,
+  nfold = 5,
+  showsd = TRUE,
+  stratified = FALSE,
+  print_every_n = 10,
+  early_stopping_rounds = 20,
+  maximize = FALSE
+)
+
+saveRDS(dataset_xgb, file = paste0(model_directory, "/xgbcv.rds"))
+
+print("Cross-validation completed")
+print(xgbcv$evaluation_log)
+
+best_nrounds <- xgbcv$best_iteration
+print(paste("Best number of rounds:", best_nrounds))
+
+print("Hyperparameter Tuning with MLR")
+
+# Create tasks
+traintask <- makeRegrTask(data = as.data.frame(train_matrix), target = "log_target")
+testtask <- makeRegrTask(data = as.data.frame(test_matrix), target = "log_target")
+
+# Save tasks
+saveRDS(dataset_xgb, file = paste0(model_directory, "/traintask.rds"))
+saveRDS(dataset_xgb, file = paste0(model_directory, "/testtask.rds"))
+```
+
+```{r}
+# Load tasks
+traintask <- readRDS(paste0(model_directory, "/traintask.rds"))
+testtask <- readRDS(paste0(model_directory, "/testtask.rds"))
+
+# Create learner
+lrn <- makeLearner("regr.xgboost", predict.type = "response")
+lrn$par.vals <- list(objective = "reg:squarederror", eval_metric = "rmse", nrounds = best_nrounds)
+
+# Set parameter space
+params <- makeParamSet(
+  makeDiscreteParam("booster", values = c("gbtree", "gblinear")),
+  makeIntegerParam("max_depth", lower = 3L, upper = 10L),
+  makeNumericParam("min_child_weight", lower = 1L, upper = 10L),
+  makeNumericParam("subsample", lower = 0.5, upper = 1),
+  makeNumericParam("colsample_bytree", lower = 0.5, upper = 1)
+)
+
+# Set resampling strategy
+rdesc <- makeResampleDesc("CV", stratify = FALSE, iters = 5L)
+
+# Search strategy
+ctrl <- makeTuneControlRandom(maxit = 10L)
+
+# Parameter tuning
+print("Starting parameter tuning")
+mytune <- tuneParams(
+  learner = lrn,
+  task = traintask,
+  resampling = rdesc,
+  par.set = params,
+  control = ctrl,
+  show.info = TRUE
+)
+
+saveRDS(dataset_xgb, file = paste0(model_directory, "/mytune.rds"))
+
+print("Parameter tuning completed")
+print(mytune)
+
+# Set hyperparameters
+lrn_tune <- setHyperPars(lrn, par.vals = mytune$x)
+
+# Train model
+print("Training final model")
+xgmodel <- mlr::train(learner = lrn_tune, task = traintask)
+
+saveRDS(dataset_xgb, file = paste0(model_directory, "/xgmodel.rds"))
+
+# Predict model
+print("Making predictions on test set")
+xgpred <- predict(xgmodel, testtask)
+
+saveRDS(dataset_xgb, file = paste0(model_directory, "/xgpred.rds"))
+```
+
+```{r}
+# Load trained model and predictions
+# xgmodel <- readRDS("xgmodel.rds"))
+# xgpred <- readRDS("xgpred.rds"))
+
+# Transform predictions and actual values back to the original scale
+xgbpred_original <- expm1(xgpred$data$response)
+test_labels_original <- expm1(test_labels)
+
+# Calculate performance metrics on the original scale
+rmse_original <- sqrt(mean((xgbpred_original - test_labels_original)^2))
+print(paste("RMSE on original scale:", rmse_original))
+
+# Calculate R-squared on the original scale
+rss <- sum((xgbpred_original - test_labels_original)^2)
+tss <- sum((test_labels_original - mean(test_labels_original))^2)
+r_squared <- 1 - (rss / tss)
+print(paste("R-squared on original scale:", r_squared))
+
+# Calculate Adjusted R-squared on the original scale
+n <- length(test_labels_original)
+p <- ncol(test_matrix)
+adjusted_r_squared <- 1 - ((1 - r_squared) * (n - 1) / (n - p - 1))
+print(paste("Adjusted R-squared on original scale:", adjusted_r_squared))
+
+# Plot residuals
+print("Plotting residuals")
+residuals <- test_labels_original - xgbpred_original
+plot(residuals, main = "Residuals Plot", ylab = "Residuals", xlab = "Index", col = "blue", pch = 20)
+abline(h = 0, col = "red")
+
+# Histogram of residuals
+hist(residuals, breaks = 50, main = "Histogram of Residuals", xlab = "Residuals", col = "blue")
+
+# Plot predictions vs actual values
+plot(test_labels_original, xgbpred_original, main = "Predictions vs Actual Values", xlab = "Actual Values", ylab = "Predicted Values", col = "blue", pch = 19)
+abline(0, 1, col = "red")
+
+
+```
+
+
+```{r}
+# # Compare with XGBoost performance
+# print(paste("XGBoost RMSE:", rmse_xgb), rmse_linear)
+# print(paste("XGBoost MAE:", mae_xgb), mae_linear)
+# print(paste("XGBoost MAPE:", mape_xgb), mape_linear)
+# print(paste("XGBoost R²:", r2_xgb), r2_linear)
+# print(paste("XGBoost Adjusted R²:", adj_r2_xgb), adj_r2_linear)
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+dataset_xgb <- dataset %>%
+  mutate(log_target = log1p(target)) %>%
+  select(-starts_with("mean_speed"),
+         -starts_with("median_speed"),
+         -starts_with("mean_congestion"),
+         -starts_with("median_congestion"),
+         -z, -target)
+
+# Determine the index for the 70% split
+split_index <- floor(0.7 * nrow(arrange(dataset_xgb, time_stamp)))
+
+# Find the date at this index
+split_time <- dataset_xgb %>% arrange(time_stamp) %>%
+  pull(time_stamp) %>% .[floor(0.7 * nrow(dataset_xgb))]
+
+# Split the data into training and testing sets based on the split_time
+train <- subset(dataset_xgb, time_stamp <= split_time)
+test <- subset(dataset_xgb, time_stamp > split_time)
+
+# remove timestamp and sensor index
+train <- train %>% select(-time_stamp, -sensor_index)
+test <- test %>% select(-time_stamp, -sensor_index)
+
+# Convert data to matrix format for xgboost
+train_matrix <- as.matrix(train %>% select(-log_target))
+test_matrix <- as.matrix(test %>% select(-log_target))
 
 # Extract labels
 train_labels <- train$log_target
@@ -166,6 +626,13 @@ test_labels <- test$log_target
 dtrain <- xgb.DMatrix(data = train_matrix, label = train_labels)
 dtest <- xgb.DMatrix(data = test_matrix, label = test_labels)
 
+# Update training and testing matrices
+train_matrix <- as.matrix(train %>% select(-log_target))
+test_matrix <- as.matrix(test %>% select(-log_target))
+
+# scale data
+train_matrix <- scale(train_matrix)
+test_matrix <- scale(test_matrix)
 ```
 
 
@@ -377,32 +844,18 @@ abline(0, 1, col = "red")
 
 # get dataframe for descriptions
 descriptions <- descriptions_df(dataset)
-
 # Update descriptions dataframe
 descriptions <- update_description(descriptions,
-                                   c("time_stamp", "pm2.5_atm", "sensor_index", "dow", "hour",
-                                     "day", "month", "year", "wknd", "holiday", "b_yes", "b_house", 
-                                     "b_detached", "b_NA", "b_apartments", "b_school", "b_residential",
-                                     "b_retail", "b_commercial", "b_industrial", "b_other", "r_residential",
-                                     "r_service", "r_footway", "r_tertiary", "r_secondary", "r_primary",
-                                     "r_path", "r_cycleway", "r_motorway", "r_track", "r_motorway_link",
-                                     "r_unclassified", "r_other", "num_trees", "mean_speed_motorway",
-                                     "mean_speed_motorway_link", "mean_speed_primary", "mean_speed_residential",
-                                     "mean_speed_tertiary", "mean_speed_other", "mean_speed_service",
-                                     "mean_speed_secondary", "mean_speed_unclassified", "mean_speed_cycleway",
-                                     "median_speed_motorway", "median_speed_motorway_link", "median_speed_primary",
-                                     "median_speed_residential", "median_speed_tertiary", "median_speed_other",
-                                     "median_speed_service", "median_speed_secondary", "median_speed_unclassified",
-                                     "median_speed_cycleway", "mean_congestion_motorway", "mean_congestion_motorway_link",
-                                     "mean_congestion_primary", "mean_congestion_residential", "mean_congestion_tertiary",
-                                     "mean_congestion_other", "mean_congestion_service", "mean_congestion_secondary",
-                                     "mean_congestion_unclassified", "mean_congestion_cycleway", "median_congestion_motorway",
-                                     "median_congestion_motorway_link", "median_congestion_primary",
-                                     "median_congestion_residential", "median_congestion_tertiary", "median_congestion_other",
-                                     "median_congestion_service", "median_congestion_secondary",
-                                     "median_congestion_unclassified", "median_congestion_cycleway",
-                                     "weatherstation", "station_distance", "station_elevation", "x", "y", "z",
-                                     "temp_fahrenheit", "rel_humidity", "wind_direction", "wind_speed"),
+                                   c("time_stamp", "target", "sensor_index", "dow", "hour",
+                                     "day", "month", "year", "wknd", "holiday", 
+                                     "length_major", "length_minor", "mean_speed_minor", 
+                                     "mean_speed_major", "median_speed_minor", "median_speed_major",
+                                     "mean_congestion_minor", "mean_congestion_major", 
+                                     "median_congestion_minor", "median_congestion_major",
+                                     "weatherstation", "station_distance", "station_elevation", 
+                                     "x", "y", "z", "temp_fahrenheit", "rel_humidity", 
+                                     "wind_direction", "wind_speed", "area_house", 
+                                     "area_other", "area_apartments", "num_trees"),
                                    c("Timestamp of the measurement",
                                      "PM2.5 concentration",
                                      "Unique identifier for sensors",
@@ -413,71 +866,16 @@ descriptions <- update_description(descriptions,
                                      "Year of the measurement",
                                      "Weekend indicator (1 if weekend, 0 otherwise)",
                                      "Holiday indicator (1 if holiday, 0 otherwise)",
-                                     "Total area of buildings classified as 'yes' (m^2)",
-                                     "Total area of houses (m^2)",
-                                     "Total area of detached buildings (m^2)",
-                                     "Total area of buildings with NA classification (m^2)",
-                                     "Total area of apartments (m^2)",
-                                     "Total area of schools (m^2)",
-                                     "Total area of residential buildings (m^2)",
-                                     "Total area of retail buildings (m^2)",
-                                     "Total area of commercial buildings (m^2)",
-                                     "Total area of industrial buildings (m^2)",
-                                     "Total area of other types of buildings (m^2)",
-                                     "Total length of residential roads (m)",
-                                     "Total length of service roads (m)",
-                                     "Total length of footways (m)",
-                                     "Total length of tertiary roads (m)",
-                                     "Total length of secondary roads (m)",
-                                     "Total length of primary roads (m)",
-                                     "Total length of paths (m)",
-                                     "Total length of cycleways (m)",
-                                     "Total length of motorways (m)",
-                                     "Total length of tracks (m)",
-                                     "Total length of motorway links (m)",
-                                     "Total length of unclassified roads (m)",
-                                     "Total length of other types of roads (m)",
-                                     "Number of trees around sensor",
-                                     "Mean speed on motorways (mph)",
-                                     "Mean speed on motorway links (mph)",
-                                     "Mean speed on primary roads (mph)",
-                                     "Mean speed on residential roads (mph)",
-                                     "Mean speed on tertiary roads (mph)",
-                                     "Mean speed on other roads (mph)",
-                                     "Mean speed on service roads (mph)",
-                                     "Mean speed on secondary roads (mph)",
-                                     "Mean speed on unclassified roads (mph)",
-                                     "Mean speed on cycleways (mph)",
-                                     "Median speed on motorways (mph)",
-                                     "Median speed on motorway links (mph)",
-                                     "Median speed on primary roads (mph)",
-                                     "Median speed on residential roads (mph)",
-                                     "Median speed on tertiary roads (mph)",
-                                     "Median speed on other roads (mph)",
-                                     "Median speed on service roads (mph)",
-                                     "Median speed on secondary roads (mph)",
-                                     "Median speed on unclassified roads (mph)",
-                                     "Median speed on cycleways (mph)",
-                                     "Mean congestion ratio on motorways",
-                                     "Mean congestion ratio on motorway links",
-                                     "Mean congestion ratio on primary roads",
-                                     "Mean congestion ratio on residential roads",
-                                     "Mean congestion ratio on tertiary roads",
-                                     "Mean congestion ratio on other roads",
-                                     "Mean congestion ratio on service roads",
-                                     "Mean congestion ratio on secondary roads",
-                                     "Mean congestion ratio on unclassified roads",
-                                     "Mean congestion ratio on cycleways",
-                                     "Median congestion ratio on motorways",
-                                     "Median congestion ratio on motorway links",
-                                     "Median congestion ratio on primary roads",
-                                     "Median congestion ratio on residential roads",
-                                     "Median congestion ratio on tertiary roads",
-                                     "Median congestion ratio on other roads",
-                                     "Median congestion ratio on service roads",
-                                     "Median congestion ratio on secondary roads",
-                                     "Median congestion ratio on unclassified roads",
-                                     "Median congestion ratio on cycleways",
+                                     "Total length of major roads (m)",
+                                     "Total length of minor roads (m)",
+                                     "Mean speed on minor roads (mph)",
+                                     "Mean speed on major roads (mph)",
+                                     "Median speed on minor roads (mph)",
+                                     "Median speed on major roads (mph)",
+                                     "Mean congestion ratio on minor roads",
+                                     "Mean congestion ratio on major roads",
+                                     "Median congestion ratio on minor roads",
+                                     "Median congestion ratio on major roads",
                                      "Weather station identifier",
                                      "Distance to the weather station in meters",
                                      "Elevation of the weather station in meters",
@@ -487,7 +885,12 @@ descriptions <- update_description(descriptions,
                                      "Temperature in Fahrenheit",
                                      "Relative humidity in percentage",
                                      "Wind direction in degrees",
-                                     "Wind speed (mph)"))
+                                     "Wind speed (mph)",
+                                     "Total area of houses (m^2)",
+                                     "Total area of other buildings (m^2)",
+                                     "Total area of apartments (m^2)",
+                                     "Number of trees around sensor"))
+
 
 ```
 

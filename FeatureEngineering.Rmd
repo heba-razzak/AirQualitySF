@@ -24,56 +24,29 @@ library(ggplot2) # Plots
 library(timeDate) # For holidays
 ```
 
-## Read files
-
-```{r, read-files}
-traffic_data <- fread(paste0(preprocessing_directory, "/traffic.csv"))
-purpleair_data <- fread(paste0(preprocessing_directory,"/purpleair_filtered_2018-2019.csv"))
-weather_data <- fread(paste0(preprocessing_directory,"/weather_filtered.csv"))
-purpleair_sensors <- st_read(paste0(preprocessing_directory, "/pasensors_weatherstations.gpkg"), quiet = TRUE)
-osm_roads <- st_read(paste0(osm_directory, "/bayarea_roads_osm.gpkg"), quiet = TRUE)
-osm_trees <- st_read(paste0(osm_directory, "/bayarea_trees_osm.gpkg"), quiet = TRUE)
-osm_buildings <- st_read(paste0(osm_directory, "/bayarea_buildings_osm.gpkg"), quiet = TRUE)
-```
-
-```{r, filter-for-testing, eval = FALSE, include = FALSE}
-bbox <- c(xmin = -122.55, ymin = 37.82, xmax = -122.35, ymax = 37.7)
-bbox_polygon <- st_as_sfc(st_bbox(bbox))
-st_crs(bbox_polygon) <- 4326
-sanfran <- st_intersection(osm_roads, bbox_polygon)
-
-traffic_data <- traffic_data %>% filter(osm_way_id %in% unique(sanfran$osm_id))
-purpleair_data <- purpleair_data %>% filter(sensor_index %in% unique(sanfran$sensor_index))
-osm_roads <- osm_roads %>% filter(sensor_index %in% unique(sanfran$sensor_index))
-osm_trees <- osm_trees %>% filter(sensor_index %in% unique(sanfran$sensor_index))
-osm_buildings <- osm_buildings %>% filter(sensor_index %in% unique(sanfran$sensor_index))
-purpleair_sensors <- purpleair_sensors %>% filter(sensor_index %in% unique(sanfran$sensor_index))
-weather_data <- weather_data %>% filter(station %in% unique(purpleair_sensors$weatherstation))
-
-# When testing save files to different folder
-preprocessing_directory <- paste0(preprocessing_directory,"/test")
-st_write(purpleair_sensors, paste0(preprocessing_directory, "/pasensors_weatherstations.gpkg"), append=FALSE, quiet = TRUE)
-```
-
 ## Round sensor coordinates to 3 decimal places
 
 ```{r, round-3dp}
+# Read files
+purpleair_sensors_sf <- st_read(paste0(preprocessing_directory, "/pasensors_weatherstations.gpkg"), quiet = TRUE)
+
 # Round lat and lon
-purpleair_sensors <- st_set_precision(purpleair_sensors, precision=1000)
-st_write(purpleair_sensors, paste0(preprocessing_directory, "/pasensors_weatherstations3dp.gpkg"), append=FALSE, quiet = TRUE)
+purpleair_sensors_sf <- st_set_precision(purpleair_sensors_sf, precision=1000)
+st_write(purpleair_sensors_sf, paste0(preprocessing_directory, "/pasensors_weatherstations3dp.gpkg"), append=FALSE, quiet = TRUE)
 ```
 
 ## Map difference in precision
 
 ```{r, map-3dp}
+# Read files
 purpleair_original <- st_read(paste0(preprocessing_directory, "/pasensors_weatherstations.gpkg"), quiet = TRUE)
-purpleair_sensors <- st_read(paste0(preprocessing_directory, "/pasensors_weatherstations3dp.gpkg"), quiet = TRUE)
+purpleair_sensors_sf <- st_read(paste0(preprocessing_directory, "/pasensors_weatherstations3dp.gpkg"), quiet = TRUE)
 
 # Map difference in precision
 leaflet() %>%
   addProviderTiles("CartoDB") %>% 
   addCircleMarkers(data = purpleair_original, color = "red",radius=2, label=purpleair_original$sensor_index) %>%
-  addCircleMarkers(data = purpleair_sensors, color = "blue",radius=2, label=purpleair_sensors$sensor_index) %>% 
+  addCircleMarkers(data = purpleair_sensors_sf, color = "blue",radius=2, label=purpleair_sensors_sf$sensor_index) %>% 
   addLegend(colors = c("red", "blue"), 
             labels = c("Original Coord", "Rounded 3dp")) %>% 
   setView(lng = -122.44, lat =  37.76, zoom = 13)
@@ -86,7 +59,7 @@ leaflet() %>%
 # https://medium.com/@manishsingh7163/converting-from-latitude-longitude-to-cartesian-coordinates-9ddf30841c45
 
 # Extract coordinates
-coords <- st_coordinates(purpleair_sensors)
+coords <- st_coordinates(purpleair_sensors_sf)
 
 # Convert coordinates from degrees to radians
 lat_rad <- coords[, 2] * pi / 180
@@ -98,12 +71,18 @@ y <- cos(lat_rad) * sin(lon_rad)
 z <- sin(lat_rad)
 
 # Add Cartesian coordinates as new columns to the purpleair_sensors data frame
-purpleair_sensors <- purpleair_sensors %>%
+purpleair_sensors <- purpleair_sensors_sf %>%
   mutate(x = x, y = y, z = z) %>% 
   st_drop_geometry()
 
 # Save purple air sensors
 fwrite(purpleair_sensors, paste0(preprocessing_directory,"/purpleair_sensors.csv"))
+```
+
+## Get unique purpleair sensors for dataset
+```{r, unique-pa}
+# Read files
+purpleair_data <- fread(paste0(preprocessing_directory,"/purpleair_filtered_2018-2019.csv"))
 
 # Get unique sensor indices from both data frames
 unique_sensors_padata <- unique(purpleair_data$sensor_index)
@@ -111,14 +90,28 @@ unique_sensors_sensordata <- unique(purpleair_sensors$sensor_index)
 
 # Find the intersection of the two sets of unique sensor indices
 unique_sensors <- intersect(unique_sensors_padata, unique_sensors_sensordata)
+write.csv(unique_sensors, paste0(preprocessing_directory,"/unique_sensors.csv"),
+          row.names = FALSE)
+
+# only keep sensors in intersection
+purpleair_sensors <- purpleair_sensors %>% filter(sensor_index %in% unique_sensors)
 
 # Number of purple air sensors
 num_sensors <- length(unique_sensors)
 ```
 
+```{r, include=FALSE}
+# Remove to free memory
+rm(purpleair_data, purpleair_sensors_sf, unique_sensors_padata, x, y, z, 
+   lat_rad, lon_rad, coords, unique_sensors_sensordata, purpleair_original)
+```
+
 ## Weather data
 
 ```{r, join-weather}
+# Read files
+weather_data <- fread(paste0(preprocessing_directory,"/weather_filtered.csv"))
+
 # Drop lon and lat from weather data
 weather_data <- weather_data %>% select(-lon, -lat)
 
@@ -135,14 +128,22 @@ fwrite(weather_data, paste0(preprocessing_directory,"/weather_data.csv"))
 
 ```{r, include=FALSE}
 # Remove to free memory
-rm(unique_sensors_padata,unique_sensors_sensordata,x,y,z,lat_rad,lon_rad)
+rm(weather_data)
 ```
 
 ## Road types: Major and Minor
 
 ```{r, road-types}
+# Read files
+osm_roads <- st_read(paste0(osm_directory, "/bayarea_roads_osm.gpkg"), quiet = TRUE)
+unique_sensors_df <- read.csv(paste0(preprocessing_directory,"/unique_sensors.csv"))
+unique_sensors <- unique_sensors_df[[1]]
+
 # roads in purple air dataset
-osm_roads_pa <- osm_roads %>% filter(sensor_index %in% unique_sensors)
+osm_roads_pa <- osm_roads %>% 
+  filter(sensor_index %in% unique_sensors) %>%
+  mutate(osm_id = as.integer(osm_id))
+
 
 # https://wiki.openstreetmap.org/wiki/Key:highway
 major_roads <- c("motorway", "motorway_link", "trunk", "primary")
@@ -160,14 +161,11 @@ osm_roads_pa <- osm_roads_pa %>%
 road_lengths <- osm_roads_pa %>%
   select(sensor_index, road_type) %>%
   group_by(sensor_index, road_type) %>%
-  summarize(road_length = sum(st_length(geom)), .groups = 'drop') %>%
+  summarize(road_length = round(sum(st_length(geom)),2), .groups = 'drop') %>%
   st_drop_geometry()
   
 # Remove units from road_length
 attributes(road_lengths$road_length) = NULL
-
-# Round road length
-road_lengths$road_length <- round(road_lengths$road_length,2)
 
 # Pivot road lengths
 road_lengths_pivot <- road_lengths %>%
@@ -182,70 +180,119 @@ road_lengths_pivot <- road_lengths %>%
 fwrite(road_lengths_pivot, paste0(preprocessing_directory,"/road_lengths_pivot.csv"))
 ```
 
+```{r, include=FALSE}
+# Remove to free memory
+rm(osm_roads, road_lengths, road_lengths_pivot, major_roads)
+```
+
 ## Traffic preprocessing
 
 ```{r, traffic-preprocessing}
+# Read files
+traffic_data <- fread(paste0(preprocessing_directory, "/traffic.csv"))
+
+# Filter traffic & drop free flow speed since we have speed and congestion 
+traffic_data <- traffic_data %>% 
+  filter(osm_way_id %in% osm_roads_pa$osm_id) %>% 
+  select(-free_flow_speed)
+
 # roads dataframe to join with traffic data
 osm_road_types <- osm_roads_pa %>%
   select(sensor_index, osm_id, road_type) %>%
-  mutate(osm_id = as.integer(osm_id)) %>%
   st_drop_geometry() %>%
   distinct()
 
 # Save road types
 fwrite(osm_road_types, paste0(preprocessing_directory,"/osm_road_types.csv"))
 
-# Drop free flow speed since we have the speed and congestion ratio 
-traffic_data <- traffic_data %>% select(-free_flow_speed)
-
-# inner join to only keep roads that have a sensor index
-traffic_roads <- traffic_data %>% inner_join(osm_road_types, by=c("osm_way_id"="osm_id"))
-
 # Remove to free memory
-rm(traffic_data,osm_road_types,osm_roads_pa,osm_roads)
+rm(osm_roads_pa)
+```
 
-# Aggregate traffic data by sensor, road_type and timestamp
-traffic_agg <- traffic_roads %>%
-  group_by(sensor_index, road_type, utc_timestamp) %>%
-  summarize(
-    mean_speed = mean(speed_mph_mean, na.rm = TRUE),
-    median_speed = median(speed_mph_mean, na.rm = TRUE),
-    mean_congestion = mean(congestion_ratio, na.rm = TRUE),
-    median_congestion = median(congestion_ratio, na.rm = TRUE),
-    .groups = 'drop'
-  )
+## Join traffic with road types and sensor index
+```{r}
+traffic_data <- fread(paste0(preprocessing_directory, "/traffic.csv"))
+osm_road_types <- fread(paste0(preprocessing_directory,"/osm_road_types.csv"))
+unique_sensors_df <- read.csv(paste0(preprocessing_directory,"/unique_sensors.csv"))
+unique_sensors <- unique_sensors_df[[1]]
 
-# Remove to free memory
-rm(traffic_roads)
+# Initialize an empty list to store aggregated results for each sensor
+traffic_agg_list <- list()
+
+# Iterate over each unique sensor
+for (i in seq_along(unique_sensors)) {
+  s <- unique_sensors[i]
+  start_time <- Sys.time()
+  
+  print(paste(i, "of", length(unique_sensors), " - Processing sensor:", s))
+
+  # Filter road types for current sensor
+  osm_ids <- osm_road_types %>% filter(sensor_index == s)
+
+  # Filter traffic_data for the current osm_ids
+  filtered_traffic_data <- traffic_data %>% filter(osm_way_id %in% osm_ids$osm_id)
+
+  # Join filtered traffic data with osm_road_types
+  sensor_traffic_roads <- filtered_traffic_data %>% inner_join(osm_ids, by = c("osm_way_id" = "osm_id"))
+
+  # Aggregate traffic data by sensor, road_type, and timestamp
+  sensor_traffic_agg <- sensor_traffic_roads %>%
+    group_by(sensor_index, road_type, utc_timestamp) %>%
+    summarize(
+      mean_speed = mean(speed_mph_mean, na.rm = TRUE),
+      median_speed = median(speed_mph_mean, na.rm = TRUE),
+      mean_congestion = mean(congestion_ratio, na.rm = TRUE),
+      median_congestion = median(congestion_ratio, na.rm = TRUE),
+      .groups = 'drop'
+    )
+
+  # Add the aggregated data to the list
+  traffic_agg_list[[length(traffic_agg_list) + 1]] <- sensor_traffic_agg
+  
+  print(paste("Time: ", round(difftime(Sys.time(), start_time, units = "secs"), 2), "seconds"))
+}
+
+# Combine all aggregated results
+traffic_agg <- bind_rows(traffic_agg_list)
 
 # Pivot the data for all relevant columns
-traffic_agg <- traffic_agg %>% 
+traffic_agg_pivot <- traffic_agg %>% 
   pivot_wider(names_from = road_type, 
               values_from = c(mean_speed, median_speed, mean_congestion, median_congestion),
               names_sep = "_")
 
 # Save traffic agg
-fwrite(traffic_agg, paste0(preprocessing_directory,"/traffic_agg.csv"))
+fwrite(traffic_agg_pivot, paste0(preprocessing_directory,"/traffic_agg.csv"))
 ```
 
-## Building types: 
+```{r, include=FALSE}
+# Remove to free memory
+rm(traffic_data, traffic_agg_pivot, traffic_agg_list, sensor_traffic_agg,
+   sensor_traffic_roads, filtered_traffic_data, osm_road_types)
+```
 
-```{r, road-types}
-# # buildings in purple air dataset
-# osm_buildings_pa <- osm_buildings %>% filter(sensor_index %in% unique_sensors)
+## Building types: house, apartment, undefined, other
+
+```{r, building-types}
+# Read files
+osm_buildings <- st_read(paste0(osm_directory, "/bayarea_buildings_osm.gpkg"), quiet = TRUE)
+unique_sensors_df <- read.csv(paste0(preprocessing_directory,"/unique_sensors.csv"))
+unique_sensors <- unique_sensors_df[[1]]
 
 # https://wiki.openstreetmap.org/wiki/Key:building
 # Define building categories
 house <- c("house", "detached", "semidetached_house", "houses", "farm")
-apartments <- c("residential", "apartments")
+apartments <- c("residential", "apartment")
+undefined <- c("NA", "yes")
 
 # Categorize buildings
 buildings <- osm_buildings %>% 
   filter(sensor_index %in% unique_sensors) %>%
   mutate(building = ifelse(is.na(building), "NA", building)) %>%
   mutate(building_type = case_when(
+      building %in% undefined ~ "undefined",
     building %in% house ~ "house",
-    building %in% apartments ~ "apartments",
+    building %in% apartments ~ "apartment",
     TRUE ~ "other"
   ))
 ```
@@ -279,6 +326,11 @@ fwrite(building_areas, paste0(preprocessing_directory,"/building_areas.csv"))
 
 ## Calculate num trees for each PurpleAir sensor
 ```{r, tree-counts}
+# Read files
+osm_trees <- st_read(paste0(osm_directory, "/bayarea_trees_osm.gpkg"), quiet = TRUE)
+unique_sensors_df <- read.csv(paste0(preprocessing_directory,"/unique_sensors.csv"))
+unique_sensors <- unique_sensors_df[[1]]
+
 # Drop geometry and calculate tree counts
 tree_counts <- osm_trees %>% 
   filter(sensor_index %in% unique_sensors) %>%
@@ -294,6 +346,11 @@ fwrite(tree_counts, paste0(preprocessing_directory,"/tree_counts.csv"))
 ## Create final dataset temporal features
 
 ```{r, temporal-features}
+# Read files
+purpleair_data <- fread(paste0(preprocessing_directory,"/purpleair_filtered_2018-2019.csv"))
+unique_sensors_df <- read.csv(paste0(preprocessing_directory,"/unique_sensors.csv"))
+unique_sensors <- unique_sensors_df[[1]]
+
 # Get holidays for 2018 and 2019
 holidays <- as.Date(c(holidayNYSE(2019), holidayNYSE(2018)))
 
@@ -325,6 +382,7 @@ road_lengths_pivot <- fread(paste0(preprocessing_directory,"/road_lengths_pivot.
 weather_data <- fread(paste0(preprocessing_directory,"/weather_data.csv"))
 purpleair_sensors <- fread(paste0(preprocessing_directory,"/purpleair_sensors.csv"))
 tree_counts <- fread(paste0(preprocessing_directory,"/tree_counts.csv"))
+building_areas <- fread(paste0(preprocessing_directory,"/building_areas.csv"))
 
 # Merge road lengths with final_dataset
 final_dataset <- final_dataset %>%
@@ -354,3 +412,13 @@ final_dataset <- final_dataset %>%
 ```{r, final-dataset}
 fwrite(final_dataset, paste0(preprocessing_directory,"/final_dataset.csv"))
 ```
+
+```{r}
+dataset <- dataset %>%
+  mutate(sensor_age = as.numeric(as.Date(time_stamp)-as.Date(date_created))) %>%
+  select(-pm2.5_atm_a, -pm2.5_atm_b, -date_created, -last_seen) %>%
+  mutate(year = year - min(year))
+fwrite(dataset, paste0(preprocessing_directory,"/final_dataset.csv"))
+
+```
+

@@ -1,0 +1,376 @@
+---
+title: "Model Building"
+output: github_document
+---
+
+```{r, testing, eval = FALSE, include = FALSE}
+# preprocessing_directory <- paste0(readr::read_file("inputs/preprocessing_directory.txt"),"/test")
+```
+
+# Model Building
+
+```{r, setup, include=FALSE}
+preprocessing_directory <- readr::read_file("inputs/preprocessing_directory.txt")
+model_directory <- readr::read_file("inputs/model_directory.txt")
+options(scipen = 999)
+```
+
+## Load required libraries
+```{r, load-libraries, message = FALSE, warning = FALSE}
+library(lubridate)      # For dates
+library(dplyr)          # For data manipulation
+library(tidyr)          # pivot
+library(ggplot2)        # plots
+library(data.table)     # Faster than dataframes (for big files)
+library(xgboost)        # XGBoost model
+library(caret)          # Preprocessing
+# devtools::install_github("heba-razzak/createDataDict")
+# library(createDataDict)
+```
+
+## Load Dataset and Preprocessing
+```{r, load-dataset}
+# Read the dataset and select relevant features
+dataset <- fread(paste0(preprocessing_directory, "/final_dataset.csv"))
+
+# Preprocess the dataset for modeling
+dataset_xgb <- dataset %>%
+  rename(target = pm2.5_atm)
+
+# Save the transformed dataset
+saveRDS(dataset_xgb, file = paste0(model_directory, "/dataset_xgb.rds"))
+```
+
+## Train-Test Split
+```{r, split-data}
+# Determine the split index and split time
+split_index <- floor(0.7 * nrow(arrange(dataset_xgb, time_stamp)))
+split_time <- dataset_xgb %>%
+  arrange(time_stamp) %>%
+  pull(time_stamp) %>%
+  .[split_index]
+
+# Split the data into training and testing sets
+train <- subset(dataset_xgb, time_stamp <= split_time)
+test <- subset(dataset_xgb, time_stamp > split_time)
+
+# Remove timestamp and sensor index from the features
+train <- train %>%
+  select(-time_stamp, -sensor_index)
+test <- test %>%
+  select(-time_stamp, -sensor_index)
+
+# Save the split datasets
+saveRDS(train, file = paste0(model_directory, "/train.rds"))
+saveRDS(test, file = paste0(model_directory, "/test.rds"))
+```
+
+## Prepare Data for XGBoost
+```{r, prepare-data}
+# Extract labels and remove the target variable from features
+train_labels <- train$target
+test_labels <- test$target
+train_matrix <- as.matrix(train %>% select(-target))
+test_matrix <- as.matrix(test %>% select(-target))
+
+# Save matrices and labels
+saveRDS(train_matrix, file = paste0(model_directory, "/train_matrix.rds"))
+saveRDS(test_matrix, file = paste0(model_directory, "/test_matrix.rds"))
+saveRDS(train_labels, file = paste0(model_directory, "/train_labels.rds"))
+saveRDS(test_labels, file = paste0(model_directory, "/test_labels.rds"))
+```
+
+## Model Training with XGBoost
+```{r, train-model}
+# Load the matrices and labels
+train_matrix <- readRDS(paste0(model_directory, "/train_matrix.rds"))
+test_matrix <- readRDS(paste0(model_directory, "/test_matrix.rds"))
+train_labels <- readRDS(paste0(model_directory, "/train_labels.rds"))
+test_labels <- readRDS(paste0(model_directory, "/test_labels.rds"))
+
+# Create DMatrix objects
+dtrain <- xgb.DMatrix(data = train_matrix, label = train_labels)
+dtest <- xgb.DMatrix(data = test_matrix, label = test_labels)
+
+# Set model parameters
+params <- list(
+  booster = "gbtree",
+  objective = "reg:squarederror",
+  eta = 0.1,
+  max_depth = 6,
+  subsample = 1,
+  colsample_bytree = 1
+)
+
+# Perform cross-validation to find the best number of rounds
+xgbcv <- xgb.cv(
+  params = params,
+  data = dtrain,
+  nrounds = 100,
+  nfold = 5,
+  showsd = TRUE,
+  early_stopping_rounds = 20,
+  maximize = FALSE,
+  print_every_n = 10
+)
+
+# Train the final model
+final_model <- xgboost(
+  params = params,
+  data = dtrain,
+  nrounds = xgbcv$best_iteration,
+  watchlist = list(train = dtrain, test = dtest),
+  early_stopping_rounds = 20,
+  maximize = FALSE
+)
+
+# Save the trained model
+saveRDS(final_model, file = paste0(model_directory, "/final_model.rds"))
+```
+
+## Feature Importance
+```{r, feature-imp}
+# Calculate and plot feature importance
+importance <- xgb.importance(feature_names = colnames(train_matrix), model = final_model)
+xgb.plot.importance(importance_matrix = importance)
+
+# Save feature importance
+saveRDS(importance, file = paste0(model_directory, "/feature_importance.rds"))
+```
+
+
+
+
+```{r}
+dataset <- fread(paste0(preprocessing_directory, "/final_dataset.csv"))
+dataset <- dataset %>% select(-date_created, -last_seen, -rssi, -uptime, -memory)
+```
+
+```{r}
+# Read and preprocess the dataset
+dataset_xgb <- dataset %>% rename(target = pm2.5_atm)
+
+# Save the transformed dataset
+saveRDS(dataset_xgb, file = paste0(model_directory, "/dataset_xgb.rds"))
+```
+
+```{r}
+# Load transformed dataset
+# dataset_xgb <- readRDS(paste0(model_directory, "/dataset_xgb.rds"))
+
+# Determine the index for the 70% split
+split_index <- floor(0.7 * nrow(arrange(dataset_xgb, time_stamp)))
+
+# Find the date at this index
+split_time <- dataset_xgb %>% arrange(time_stamp) %>%
+  pull(time_stamp) %>% .[split_index]
+
+# Split the data into training and testing sets based on the split_time
+train <- subset(dataset_xgb, time_stamp <= split_time)
+test <- subset(dataset_xgb, time_stamp > split_time)
+
+# Remove timestamp and sensor index from the features
+train <- train %>% select(-time_stamp, -sensor_index)
+test <- test %>% select(-time_stamp, -sensor_index)
+
+# Save split datasets
+saveRDS(train, file = paste0(model_directory, "/train.rds"))
+saveRDS(test, file = paste0(model_directory, "/test.rds"))
+```
+
+```{r}
+# # Load split datasets
+# train <- readRDS(paste0(model_directory, "/train.rds"))
+# test <- readRDS(paste0(model_directory, "/test.rds"))
+
+# Extract labels and remove target from features
+train_labels <- train$target
+test_labels <- test$target
+
+train_matrix <- as.matrix(train %>% select(-target))
+test_matrix <- as.matrix(test %>% select(-target))
+
+# Save matrices and labels
+saveRDS(train_matrix, file = paste0(model_directory, "/train_matrix.rds"))
+saveRDS(test_matrix, file = paste0(model_directory, "/test_matrix.rds"))
+saveRDS(train_labels, file = paste0(model_directory, "/train_labels.rds"))
+saveRDS(test_labels, file = paste0(model_directory, "/test_labels.rds"))
+```
+
+```{r}
+# Load matrices and labels
+train_matrix <- readRDS(paste0(model_directory, "/train_matrix.rds"))
+test_matrix <- readRDS(paste0(model_directory, "/test_matrix.rds"))
+train_labels <- readRDS(paste0(model_directory, "/train_labels.rds"))
+test_labels <- readRDS(paste0(model_directory, "/test_labels.rds"))
+
+# # Scale data based on training dataset
+# scaler <- preProcess(train_matrix, method = c("center", "scale"))
+# train_matrix <- predict(scaler, train_matrix)
+# test_matrix <- predict(scaler, test_matrix)
+
+# Create DMatrix objects
+dtrain <- xgb.DMatrix(data = train_matrix, label = train_labels)
+dtest <- xgb.DMatrix(data = test_matrix, label = test_labels)
+
+print("Initial Cross-Validation")
+
+# Initial cross-validation to find the best number of rounds
+params <- list(
+  booster = "gbtree",
+  objective = "reg:squarederror",
+  eta = 0.1,
+  gamma = 0,
+  max_depth = 6,
+  min_child_weight = 1,
+  subsample = 1,
+  colsample_bytree = 1
+)
+
+xgbcv <- xgb.cv(
+  params = params,
+  data = dtrain,
+  nrounds = 100,
+  nfold = 5,
+  showsd = TRUE,
+  stratified = FALSE,
+  print_every_n = 10,
+  early_stopping_rounds = 20,
+  maximize = FALSE
+)
+
+saveRDS(xgbcv, file = paste0(model_directory, "/xgbcv.rds"))
+```
+
+```{r}
+# Load xgbcv
+xgbcv <- readRDS(paste0(model_directory, "/xgbcv.rds"))
+
+print("Cross-validation completed")
+print(xgbcv$evaluation_log)
+
+best_nrounds <- xgbcv$best_iteration
+print(paste("Best number of rounds:", best_nrounds))
+
+print("Hyperparameter Tuning with MLR")
+
+# Create tasks
+train_df <- as.data.frame(cbind(train_matrix, target = train_labels))
+test_df <- as.data.frame(cbind(test_matrix, target = test_labels))
+traintask <- makeRegrTask(data = train_df, target = "target")
+testtask <- makeRegrTask(data = test_df, target = "target")
+
+# Save tasks
+saveRDS(traintask, file = paste0(model_directory, "/traintask.rds"))
+saveRDS(testtask, file = paste0(model_directory, "/testtask.rds"))
+
+# Load tasks
+# traintask <- readRDS(paste0(model_directory, "/traintask.rds"))
+# testtask <- readRDS(paste0(model_directory, "/testtask.rds"))
+
+# Create learner
+lrn <- makeLearner("regr.xgboost", predict.type = "response")
+lrn$par.vals <- list(objective = "reg:squarederror", eval_metric = "rmse", nrounds = best_nrounds)
+
+# Set parameter space
+params <- makeParamSet(
+  makeDiscreteParam("booster", values = c("gbtree", "gblinear")),
+  makeIntegerParam("max_depth", lower = 3L, upper = 10L),
+  makeNumericParam("min_child_weight", lower = 1L, upper = 10L),
+  makeNumericParam("subsample", lower = 0.5, upper = 1),
+  makeNumericParam("colsample_bytree", lower = 0.5, upper = 1)
+)
+
+# Set resampling strategy
+rdesc <- makeResampleDesc("CV", stratify = FALSE, iters = 5L)
+
+# Search strategy
+ctrl <- makeTuneControlRandom(maxit = 10L)
+
+# Parameter tuning
+print("Starting parameter tuning")
+mytune <- tuneParams(
+  learner = lrn,
+  task = traintask,
+  resampling = rdesc,
+  par.set = params,
+  control = ctrl,
+  show.info = TRUE
+)
+
+saveRDS(mytune, file = paste0(model_directory, "/mytune.rds"))
+
+print("Parameter tuning completed")
+print(mytune)
+
+# Set hyperparameters
+lrn_tune <- setHyperPars(lrn, par.vals = mytune$x)
+
+# Train model
+print("Training final model")
+xgmodel <- mlr::train(learner = lrn_tune, task = traintask)
+
+saveRDS(xgmodel, file = paste0(model_directory, "/xgmodel.rds"))
+
+# Predict model
+print("Making predictions on test set")
+xgpred <- predict(xgmodel, testtask)
+
+saveRDS(xgpred, file = paste0(model_directory, "/xgpred.rds"))
+
+# Load trained model and predictions
+# xgmodel <- readRDS(paste0(model_directory, "/xgmodel.rds"))
+# xgpred <- readRDS(paste0(model_directory, "/xgpred.rds"))
+
+# Calculate performance metrics
+rmse_original <- sqrt(mean((xgpred$data$response - test_labels)^2))
+print(paste("RMSE on original scale:", rmse_original))
+
+rss <- sum((xgpred$data$response - test_labels)^2)
+tss <- sum((test_labels - mean(test_labels))^2)
+r_squared <- 1 - (rss / tss)
+print(paste("R-squared on original scale:", r_squared))
+
+n <- length(test_labels)
+p <- ncol(test_matrix)
+adjusted_r_squared <- 1 - ((1 - r_squared) * (n - 1) / (n - p - 1))
+print(paste("Adjusted R-squared on original scale:", adjusted_r_squared))
+
+# Plot residuals
+print("Plotting residuals")
+residuals <- test_labels - xgpred$data$response
+plot(residuals, main = "Residuals Plot", ylab = "Residuals", xlab = "Index", col = "blue", pch = 20)
+abline(h = 0, col = "red")
+
+# Histogram of residuals
+hist(residuals, breaks = 50, main = "Histogram of Residuals", xlab = "Residuals", col = "blue")
+
+# Plot predictions vs actual values
+plot(test_labels, xgpred$data$response, main = "Predictions vs Actual Values", xlab = "Actual Values", ylab = "Predicted Values", col = "blue", pch = 19)
+abline(0, 1, col = "red")
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```

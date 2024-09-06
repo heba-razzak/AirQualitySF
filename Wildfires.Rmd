@@ -1,0 +1,158 @@
+---
+title: "Wildfires"
+output: github_document
+---
+
+# Wildfires
+
+```{r setup, include=FALSE}
+preprocessing_directory <- readr::read_file("inputs/preprocessing_directory.txt")
+wildfire_directory <- "/Users/heba/Documents/GitHub/AirQualitySF/CaliforniaFirePerimeters"
+options(scipen = 999)
+```
+
+## Load required libraries
+```{r, load-libraries, message = FALSE, warning = FALSE}
+library(httr)
+library(jsonlite)
+library(dplyr) # For data manipulation
+library(sf) # For working with spatial data
+library(mapview)
+```
+
+```{r}
+# Data Source:
+# https://data.ca.gov/dataset/california-fire-perimeters-all1
+# Metadata (Column Descriptions):
+# https://calfire-forestry.maps.arcgis.com/home/item.html?id=93a1f8cc1456497f86ecd25933e6c9b9
+
+fire <- st_read(paste0(wildfire_directory,"/California_Fire_Perimeters_(all).shp"), quiet = TRUE)
+fire <- fire %>% filter(YEAR_ %in% c(2017, 2018, 2019),
+                        STATE == "CA")
+
+# ALARM_DATE: Alarm Date
+# CONT_DATE: Containment Date
+
+# Name/Type/Size/Domain/Notes
+# STATE Text 2 Yes State in which the fire started
+# YEAR_ Short Integer 4 Year in which the fire started
+# AGENCY Text 3 Yes Direct protection agency responding to fire
+# UNIT_ID Text 3 Yes ICS code for unit responding to fire
+# FIRE_NAME Text 50 Name of the fire
+# INC_NUM Text 8 Number assigned by the Emergency Command Center of the responsible agency for the fire
+# IRWINID Text 40 IRWIN stands for Integrated Reporting of Wildland Fire Information, 
+#         a global unique identifier assigned at the onset of an incident.
+# ALARM_DATE Date 8 DD/MM/YYYY format, date of fire discovery
+# CONT_DATE Date 8 DD/MM/YYYY format, Containment date for the fire
+# CAUSE Short Integer 2 Yes Reason fire ignited
+# C_METHOD Short Integer 2 Yes Method used to collect perimeter data
+# OBJECTIVE Short Integer 1 Yes Tactic for fire response
+# GIS_ACRES Float 4 GIS calculated area, in acres
+# COMPLEX_NAME Text 50 If part of complex, the complex name
+# COMPLEX_ID Text 40 If part of complex, the complex
+# IRWIN ID, however, transitions from incident number previous to 2023 in future update.
+# COMMENTS Text 100 Miscellaneous comments
+# FIRE_NUM Text 8 Historical numbering system preceding incident numbers
+
+
+
+# CAUSE domain
+# 1 – Lightning 1
+# 2 – Equipment Use 2
+# 3 – Smoking 3
+# 4 – Campfire 4
+# 5 – Debris 5
+# 6 – Railroad 6
+# 7 – Arson 7
+# 8 – Playing with fire 8
+# 9 – Miscellaneous 9
+# 10 – Vehicle 10
+# 11 – Powerline 11
+# 12 – Firefighter Training 12
+# 13 – Non-Firefighter Training 13
+# 14 – Unknown/Unidentified 14
+# 15 – Structure 15
+# 16 – Aircraft 16
+# 17 – Volcanic 17
+# 18 – Escaped Prescribed Burn 18
+# 19 – Illegal Alien Campfire 19
+
+
+
+# COLLECTION METHOD (C_METHOD) domain
+# 1 – GPS Ground 1
+# 2 – GPS Air 2
+# 3 – Infrared 3
+# 4 – Other Imagery 4
+# 5 – Photo Interpretation 5
+# 6 – Hand Drawn 6
+# 7 – Mixed Collection Methods 7
+# 8 – Unknown 8
+
+
+# OBJECTIVE domain
+# Suppression (Wildfire) 1
+# Resource Benefit (WFU) 2
+```
+
+```{r}
+
+
+
+```
+
+```{r}
+fire
+```
+
+```{r}
+mapview(fire)
+```
+
+```{r}
+
+```
+
+```{r}
+# shows info for API
+# https://data.ca.gov/dataset/california-fire-perimeters-all1/resource/62190e36-2c07-4b5c-ab14-fdf9ea4593a4
+# Data Source:
+# https://services1.arcgis.com/jUJYIo9tSA7EHvfZ/arcgis/rest/services/California_Fire_Perimeters/FeatureServer
+
+```
+
+```{r}
+# this is the csv not shapefile
+base_url <- "https://data.ca.gov/api/3/action/datastore_search_sql"
+resource_id <- "62190e36-2c07-4b5c-ab14-fdf9ea4593a4"
+years <- "('2017', '2018', '2019')"
+sql_query <- paste0('SELECT * from "', resource_id, '" WHERE "Year" IN ', years)
+
+# Make the API request and parse the JSON response
+response <- GET(base_url, query = list(sql = sql_query))
+
+# Parse the JSON content
+data <- content(response, as = "text", encoding = "UTF-8")
+data_json <- fromJSON(data)
+
+# Extract the records from the response
+records <- data_json$result$records
+
+# Convert the records to a data frame
+fire_perimeters_df <- as.data.frame(records)
+
+# Print the first few rows of the data frame
+print(head(fire_perimeters_df))
+
+# Save the data frame for future use (optional)
+saveRDS(fire_perimeters_df, file = "fire_perimeters_2018_2019_df.rds")
+
+years <- "(2017, 2018, 2019)"
+
+```
+
+
+
+```{r}
+
+```

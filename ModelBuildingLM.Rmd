@@ -1,0 +1,195 @@
+---
+title: "Model Building"
+output: github_document
+---
+
+```{r, testing, eval = FALSE, include = FALSE}
+# preprocessing_directory <- paste0(readr::read_file("inputs/preprocessing_directory.txt"),"/test")
+```
+
+# Model Building
+
+```{r setup, include=FALSE}
+preprocessing_directory <- readr::read_file("inputs/preprocessing_directory.txt")
+model_directory <- readr::read_file("inputs/model_directory.txt")
+options(scipen = 999)
+```
+
+## Load required libraries
+```{r, load-libraries, message = FALSE, warning = FALSE}
+library(lubridate) # For dates
+library(dplyr) # For data manipulation
+library(sf) # For working with spatial data
+library(mapview) # to view maps
+library(tidyr) # pivot
+library(ggplot2) # plots
+library(data.table) # Faster than dataframes (for big files)
+library(randomForest) # random forest model
+library(xgboost)
+library(mlr)
+library(caTools) # Split train and test groups
+library(car)
+# devtools::install_github("heba-razzak/createDataDict")
+# library(createDataDict)
+```
+
+```{r}
+dataset <- fread(paste0(preprocessing_directory, "/final_dataset.csv"))
+dataset <- dataset %>% rename(target = pm2.5_atm)
+```
+
+
+```{r}
+# Step 1: Calculate the number of NAs for each column
+na_count <- sapply(dataset_lr, function(x) sum(is.na(x)))
+
+# Step 2: Calculate the percentage of NAs for each column
+na_percentage <- na_count / nrow(dataset_lr) * 100
+
+# Step 3: Filter columns where less than 50% of the values are NAs
+dataset_filtered <- dataset_lr[, na_percentage <= 50]
+
+# Optional: View columns that were dropped
+dropped_columns <- names(dataset_lr)[na_percentage > 50]
+cat("Dropped columns due to more than 50% NA values:", dropped_columns, "\n")
+
+# Step 4: Display the filtered dataset
+head(dataset_filtered)
+```
+
+## Linear Regression
+
+```{r}
+# Linear Regression
+dataset_lr <- dataset %>%
+  select(-starts_with("mean_speed"),
+         -starts_with("median_speed"),
+         -starts_with("mean_congestion"),
+         -starts_with("median_congestion"))
+
+dataset_lr <- na.omit(dataset_lr)
+
+dataset_lr <- dataset_lr %>% filter(target < 150)
+
+# Determine the index for the 70% split
+split_index <- floor(0.7 * nrow(arrange(dataset_lr, time_stamp)))
+
+# Find the date at this index
+split_time <- dataset_lr %>% arrange(time_stamp) %>%
+  pull(time_stamp) %>% .[floor(0.7 * nrow(dataset_lr))]
+
+# Split the data into training and testing sets based on the split_time
+train <- subset(dataset_lr, time_stamp <= split_time) %>% dplyr::select(-time_stamp, -sensor_index)
+test <- subset(dataset_lr, time_stamp > split_time)
+
+# Save timestamp and sensor index for identifying problem areas
+test_time_sensor <- test %>% select(time_stamp, sensor_index)
+
+# Remove timestamp and sensor index from test set for model training
+test <- test %>% dplyr::select(-time_stamp, -sensor_index)
+
+# True labels for test data
+test_label <- test$target
+
+# Drop target column from test
+test <- test %>% dplyr::select(-target)
+
+# Linear Regression Model
+linear_model <- lm(target ~ ., data = train)
+
+# Multicollinearity
+vif_values <- vif(linear_model)
+print("Variance Inflation Factors")
+print(vif_values)
+cat("--------------------------------------------------------------")
+
+# Summarize the model
+print("Model Summary")
+summary(linear_model)
+cat("--------------------------------------------------------------")
+
+# Make predictions
+linear_predictions <- predict(linear_model, newdata = test)
+
+# Calculate performance metrics
+# Mean Absolute Error (MAE)
+mae_linear <- mean(abs(linear_predictions - test_label))
+cat("\nLinear Regression MAE:", mae_linear)
+
+# Mean Absolute Percentage Error (MAPE)
+# Replace zero values in test_label with a very small number
+mape_test_label <- ifelse(test_label == 0, 0.00001, test_label)
+
+# Calculate Mean Absolute Percentage Error (MAPE)
+mape_linear <- mean(abs((linear_predictions - mape_test_label) / mape_test_label)) * 100
+cat("\nLinear Regression MAPE:", mape_linear)
+
+# R-squared (R²)
+ss_res_linear <- sum((linear_predictions - test_label)^2)
+ss_tot_linear <- sum((test_label - mean(test_label))^2)
+r2_linear <- 1 - (ss_res_linear / ss_tot_linear)
+cat("\nLinear Regression R²:", r2_linear)
+
+# Adjusted R-squared
+n_linear <- length(test_label)
+p_linear <- ncol(test)
+adj_r2_linear <- 1 - ((1 - r2_linear) * (n_linear - 1) / (n_linear - p_linear - 1))
+cat("\nLinear Regression Adjusted R²:", adj_r2_linear)
+
+# Root Mean Squared Error (RMSE)
+rmse_linear <- sqrt(mean((linear_predictions - test_label)^2))
+cat("\nLinear Regression RMSE:", rmse_linear, "\n")
+
+# Create a dataframe with actual values, predicted values, absolute differences, and identification columns
+results <- test %>%
+  mutate(
+    Actual = test_label,
+    Predicted = linear_predictions,
+    AbsDifference = abs(test_label - linear_predictions)
+  ) %>%
+  bind_cols(test_time_sensor) %>% 
+  arrange(desc(AbsDifference))
+
+# Plot to show which days have the most errors
+error_by_day <- results %>%
+  mutate(date = as.Date(time_stamp)) %>%
+  group_by(date) %>%
+  summarize(TotalAbsDifference = sum(AbsDifference),
+            AvgAbsDifference = mean(AbsDifference),
+            MaxAbsDifference = max(AbsDifference),
+            AbsDifference90p = quantile(AbsDifference, 0.9)) %>%
+  arrange(date)
+
+# Plot average, maximum, and 90th percentile absolute differences
+ggplot(error_by_day, aes(x = date)) +
+  geom_line(aes(y = AvgAbsDifference, color = "Average Absolute Difference")) +
+  geom_line(aes(y = MaxAbsDifference, color = "Maximum Absolute Difference")) +
+  geom_line(aes(y = AbsDifference90p, color = "90th Percentile Absolute Difference")) +
+  labs(
+    title = "Absolute Differences Over Time",
+    x = "Date",
+    y = "Absolute Difference"
+  ) +
+  scale_color_manual(
+    values = c("Average Absolute Difference" = "blue",
+               "Maximum Absolute Difference" = "red",
+               "90th Percentile Absolute Difference" = "green")
+  ) +
+  theme_minimal()
+
+# Display the sorted results
+print(error_by_day)
+
+
+# Plot residuals
+residuals <- test_label - linear_predictions
+plot(residuals, main = "Residuals Plot", ylab = "Residuals", xlab = "Index", col = "blue", pch = 20)
+abline(h = 0, col = "red")
+
+# Histogram of residuals
+hist(residuals, breaks = 50, main = "Histogram of Residuals", xlab = "Residuals", col = "blue")
+
+# Plot predictions vs actual values
+plot(test_label, linear_predictions, main = "Predictions vs Actual Values", xlab = "Actual Values", ylab = "Predicted Values", col = "blue", pch = 19)
+abline(0, 1, col = "red")
+```

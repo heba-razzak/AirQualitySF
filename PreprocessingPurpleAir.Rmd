@@ -1,11 +1,13 @@
 ---
 title: "Preprocessing PurpleAir"
 output: github_document
+always_allow_html: true
 ---
 
 # Clean PurpleAir data points
 
 ```{r setup, include=FALSE}
+api_key <- readr::read_file("inputs/purpleair_key.txt")
 purpleair_directory <- readr::read_file("inputs/purpleair_directory.txt")
 preprocessing_directory <- readr::read_file("inputs/preprocessing_directory.txt")
 ```
@@ -13,328 +15,426 @@ preprocessing_directory <- readr::read_file("inputs/preprocessing_directory.txt"
 ## Load required libraries
 
 ```{r, load-libraries, message = FALSE, warning = FALSE}
-library(dplyr) # For data manipulation
+library(dplyr)      # For data manipulation
 library(data.table) # Faster than dataframes (for big files)
-library(ggplot2) # Plots
-library(lubridate) # Dates
-library(sf) # Shapefiles
-library(leaflet) # Interactive maps
+library(ggplot2)    # Plots
+library(plotly)     # Interactive plots
+library(lubridate)  # Dates
+library(sf)         # Shapefiles
+library(leaflet)    # Interactive maps
+library(kableExtra) # Printing formatted tables
+library(zoo)        # for rolling calculations
+library(purpleAirAPI)
 ```
 
 ## Read files
 
 ```{r, read-files, eval = TRUE}
-purpleair_data <- fread(paste0(purpleair_directory, "/purple_air_2018-2019.csv"))
-purpleair_sensors <- st_read(paste0(purpleair_directory, "/purpleair_sensors.gpkg"), quiet = TRUE)
+# Read files
+purpleair_data <- fread(paste0(purpleair_directory, "/purpleair_2018-01-01_2019-12-31.csv"))
+epa_data <- read.csv(paste0(preprocessing_directory, "/EPA_airquality.csv"))
+
+# convert timestamp to datetime
+purpleair_data <- purpleair_data %>% 
+  mutate(time_stamp = lubridate::as_datetime(time_stamp))
+
+# Get total number of rows for full dataset
+total_rows <- nrow(purpleair_data)
 ```
 
-## Plot of PM2.5 channel A vs B
+```{r, include=FALSE, eval=FALSE}
+library(summarytools)
+view(dfSummary(purpleair_data))
+dfSummary(purpleair_data)
+```
+
+## Summary Statistics
+
+```{r, summ-stats, eval = TRUE}
+quants_vals <- c(0.75, 0.95, 0.99, 0.999)
+quants <- c("75%","95%","99%","99.9%")
+summary_statistics <- purpleair_data %>%
+  reframe(
+    across(c(pm2.5_atm, pm2.5_atm_a, pm2.5_atm_b),
+           ~tibble(val = round(quantile(.x, quants_vals, na.rm = TRUE),0)),
+           .unpack = TRUE)) %>%
+  mutate(`Quantiles` = quants,
+         epa = quantile(epa_data$pm25, quants_vals, na.rm = TRUE)) %>%
+  rename(`EPA PM2.5` = epa,
+         `PurpleAir PM2.5` = pm2.5_atm_val,
+         `Channel A PM2.5` = pm2.5_atm_a_val,
+         `Channel B PM2.5` = pm2.5_atm_b_val) %>%
+  select(`Quantiles`, `EPA PM2.5`, everything())
+
+knitr::kable(summary_statistics,
+             row.names = FALSE,
+             format = "markdown")
+```
+
+```{r, include=FALSE, eval=FALSE}
+library(createDataDict)
+cat("Number of rows: \t", format(total_rows, big.mark=","), "\n\n")
+cat("\t\t\tNAs\t\t% NAs\n")
+for (c in colnames(purpleair_data)) {
+  na <- sum(is.na(purpleair_data[[c]]))
+  cat(formatC(c, width = 15, flag = "-"),
+      "\t",
+      formatC(na, big.mark=",", width = 10, flag = "-"),
+      "\t",
+      round(100*na/total_rows,1), "\n")
+}
+```
+
+## Drop empty columns
+```{r, drop-na-cols}
+# Drop columns that are all NA
+purpleair_data <- purpleair_data %>% select(-pa_latency, -voc)
+```
+
+## Flag values over 500 and missing values
+```{r, flag-na-highvals}
+purpleair_data <- purpleair_data %>%
+  mutate(missinga = ifelse(is.na(pm2.5_atm_a), 1, 0),
+         missingb = ifelse(is.na(pm2.5_atm_b), 1, 0),
+         over500a = ifelse(missinga == 0 & pm2.5_atm_a > 500, 1, 0),
+         over500b = ifelse(missingb == 0 & pm2.5_atm_b > 500, 1, 0),
+         flag = case_when(
+           is.na(pm2.5_atm_a) | is.na(pm2.5_atm_b) ~ "Missing",
+           over500a == 1 | over500b == 1 ~ "PM2.5 > 500",
+           TRUE ~ "Normal"),
+         pm2.5_atm_a = ifelse(is.na(pm2.5_atm_a),-1,pm2.5_atm_a),
+         pm2.5_atm_b = ifelse(is.na(pm2.5_atm_b),-1,pm2.5_atm_b)
+  )
+```
+
+## Initial plot channel A vs B
+```{r, plot-channel-a-b, warning=FALSE}
+if (FALSE) {
+  p <- ggplot(purpleair_data, aes(x = pm2.5_atm_a, y = pm2.5_atm_b)) +
+    geom_point(data = subset(purpleair_data, flag == "Normal"), color = "black") +
+    geom_point(data = subset(purpleair_data, flag == "PM2.5 > 500"), color = "orange") +
+    geom_point(data = subset(purpleair_data, flag == "Missing"), color = "red") +
+    labs(x = "Channel A PM2.5",
+         y = "Channel B PM2.5",
+         title = "PM2.5 Channel A vs B") +
+    theme_minimal()
+  
+  ggsave(filename = paste0(preprocessing_directory, "/plots/purpleair_avsb1.png"),
+         plot = p, width = 6, height = 4)
+}
+img_path <- paste0(preprocessing_directory, "/plots/purpleair_avsb1.png")
+knitr::include_graphics(img_path)
+```
+
+## Channel A vs B limited to 1000 PM2.5
+```{r, plot-channel-a-b-lim1000, eval = TRUE, warning=FALSE}
+if (FALSE) {
+  p <- ggplot(purpleair_data, aes(x = pm2.5_atm_a, y = pm2.5_atm_b)) +
+    geom_point(data = subset(purpleair_data, flag == "Normal"), color = "black") +
+    geom_point(data = subset(purpleair_data, flag == "PM2.5 > 500"), color = "orange") +
+    geom_point(data = subset(purpleair_data, flag == "Missing"), color = "red") +
+    labs(
+      x = "Channel A PM2.5",
+      y = "Channel B PM2.5",
+      title = "PM2.5 Channel A vs B",
+      subtitle = "Axes limits set to 1000; more data points beyond the limit"
+    ) +
+    theme_minimal() +
+    xlim(-1, 1000) +
+    ylim(-1, 1000)
+  
+  ggsave(filename = paste0(preprocessing_directory, "/plots/purpleair_avsb2.png"),
+         plot = p, width = 6, height = 4)
+}
+
+img_path <- paste0(preprocessing_directory, "/plots/purpleair_avsb2.png")
+knitr::include_graphics(img_path)
+```
+
+## Flag outliers with different thresholds of relative change between channel A and B
+### Relative Change
+\[
+\text{Relative Change} = \frac{\lvert \text{Channel A}_{\text{PM2.5}} - \text{Channel B}_{\text{PM2.5}} \rvert}{\text{avg}(\text{Channel A}_{\text{PM2.5}}, \text{Channel B}_{\text{PM2.5}})}
+\]
+```{r, flag-outliers-thres}
+# flag outliers using different thresholds and compare
+# Initialize an empty data frame to store results
+outlier_summary <- data.frame(
+  threshold = numeric(0),
+  num_outliers = numeric(0),
+  percentage = numeric(0)
+)
+
+# Set thresholds for PM2.5 relative change 
+# Relative change - Arithmetic mean change	(https://en.wikipedia.org/wiki/Relative_change#Indicators_of_relative_change)
+thresholds <- c(0.1, 0.15, 0.2, 0.25, 0.3, 0.4, 0.5, 0.6)
+for (threshold in thresholds) {
+  outliers <- purpleair_data %>%
+    mutate(abs_diff = abs(pm2.5_atm_a - pm2.5_atm_b),
+           relativechange = round(abs_diff / pm2.5_atm, 2),
+           flag = ifelse(flag == "Normal" & relativechange > threshold & abs_diff > 2,
+                         "Outlier", flag))
+  
+  # Merge with original data and flag outliers
+  pa_outliers <- purpleair_data %>% select(-flag) %>%
+    left_join(outliers %>% select(time_stamp, sensor_index, flag, abs_diff, relativechange), 
+              by = c("time_stamp", "sensor_index")) %>%
+    select(time_stamp, pm2.5_atm_a, pm2.5_atm_b, abs_diff, relativechange,
+           flag, everything())
+  
+  num_outliers <- pa_outliers %>% filter(flag == "Outlier") %>% nrow()
+  percentage <- paste0(round(100 * num_outliers / total_rows, 2),"%")
+  
+  # Add the results to the data frame
+  outlier_summary <- rbind(outlier_summary, 
+                           data.frame(threshold = threshold, 
+                                      num_outliers = format(num_outliers, big.mark = ","), 
+                                      percentage = percentage))
+}
+
+data_summary <- purpleair_data %>% 
+  group_by(flag) %>% 
+  summarize(count = n(), .groups = 'drop') %>% 
+  mutate(percentage = paste0(round(100 * count / total_rows), "%")) %>%
+  arrange(desc(count)) %>% 
+  rbind(data.frame(flag = "Total", count = total_rows, percentage = "100%")) %>%
+  mutate(count = format(count, big.mark = ","))
+
+knitr::kable(data_summary,
+             row.names = FALSE,
+             format = "markdown",
+             align = 'lrr',
+             col.names = c("Flag", "Count", "Percentage")) %>%
+  kable_styling()
+
+knitr::kable(outlier_summary,
+             row.names = FALSE,
+             format = "markdown",
+             col.names = c("Threshold", "Number of Outliers", "Percentage")) %>%
+  kable_styling() %>%
+  row_spec(1, bold = TRUE, background = "#FFFF99")
+```
+
+## Plot different thresholds to compare
+```{r, plot-outliers-thres, echo=FALSE, out.width="49%", out.height="20%", fig.show='hold', fig.align='center'}
+if (FALSE) {
+  for (threshold in thresholds) {
+    outliers <- purpleair_data %>%
+      mutate(abs_diff = abs(pm2.5_atm_a - pm2.5_atm_b),
+             relativechange = round(abs_diff / pm2.5_atm, 2),
+             flag = ifelse(flag == "Normal" & relativechange > threshold & abs_diff > 2,
+                           "Outlier", flag))
+    
+    # Merge with original data and flag outliers
+    pa_outliers <- purpleair_data %>% select(-flag) %>%
+      left_join(outliers %>% select(time_stamp, sensor_index, flag, abs_diff, relativechange), 
+                by = c("time_stamp", "sensor_index")) %>%
+      select(time_stamp, pm2.5_atm_a, pm2.5_atm_b, abs_diff, relativechange,
+             flag, everything())
+    p <- ggplot(pa_outliers, aes(x = pm2.5_atm_a, y = pm2.5_atm_b, color = flag)) +
+      geom_point() +
+      scale_color_manual(values = c("Normal" = "black", "Outlier" = "grey",
+                                    "Missing" = "red", "PM2.5 > 500" = "orange"),
+                         name = "") + 
+      labs(x = "Channel A PM2.5",
+           y = "Channel B PM2.5",
+           color = "Flag",
+           title = "PM2.5 Channel A vs B",
+           subtitle = paste0("Axes limits set to 1000; more data points beyond the limit\n",
+                             "Threshold: ", threshold)) +
+      theme_minimal() +
+      xlim(-1, 1000) +
+      ylim(-1, 1000)
+    ggsave(filename = paste0(preprocessing_directory, "/plots/plot_threshold_", threshold, ".png"),
+           plot = p, width = 6, height = 4)
+  }
+}
+
+# compare plots of different thresholds
+img_paths <- c()
+for (threshold in c(0.1, 0.15, 0.2, 0.25, 0.3, 0.4, 0.5, 0.6)) {
+  img_path <- paste0(preprocessing_directory, "/plots/plot_threshold_", threshold, ".png")
+  img_paths <- c(img_paths, img_path)
+}
+
+knitr::include_graphics(img_paths)
+```
+
+## Using threshold of 0.1 relative change between channel A and B
+## And maximum value of PM2.5 500 for channel A and B
+```{r, flag-outliers}
+# flag outliers using selected threshold
+threshold = 0.1
+outliers <- purpleair_data %>%
+  mutate(abs_diff = abs(pm2.5_atm_a - pm2.5_atm_b),
+         relativechange = round(abs_diff / pm2.5_atm, 2),
+         flag = ifelse(flag == "Normal" & relativechange > threshold & abs_diff > 2,
+                       "Outlier", flag))
+# Merge with flagged and original data
+pa_outliers <- purpleair_data %>% select(-flag) %>%
+  left_join(outliers %>% select(time_stamp, sensor_index, flag, abs_diff, relativechange), 
+            by = c("time_stamp", "sensor_index")) %>%
+  select(time_stamp, pm2.5_atm_a, pm2.5_atm_b, abs_diff, relativechange, flag, everything())
+```
+
+```{r, include = FALSE}
+# # For checking specific examples
+# options(digits=2)
+# 
+# x <- pa_outliers %>%  filter(!is.na(pm2.5_atm_a), !is.na(pm2.5_atm_b)) %>%
+#     select(time_stamp, pm2.5_atm_a, pm2.5_atm_b, abs_diff, relativechange, outlier, everything())
+# x %>% filter(outlier==0) %>% slice_sample(n=10) %>% arrange(abs_diff)
+# x %>% filter(outlier==1) %>% slice_sample(n=20) %>% arrange(abs_diff)
+# x %>% sample_n(size=20, fac=pm2.5_atm) %>% arrange(outlier, abs_diff)
+# x %>% sample_n(size=20, fac=relativechange) %>% arrange(outlier, abs_diff)
+# x %>% filter(outlier==0, pm2.5_atm>100, abs_diff>10) %>% slice_sample(n=20) %>% arrange(abs_diff)
+# x %>% filter(outlier==0, pm2.5_atm<150) %>% arrange(desc(abs_diff))
+```
+
+## Filter out high PM2.5 values (>500), missing channel data, and identified outliers
+
+```{r, remove-outliers}
+# Remove outliers and keep relevant columns
+pa_filtered <- pa_outliers %>% 
+  filter(flag == "Normal") %>%
+  select(time_stamp, sensor_index, pm2.5_atm, pm2.5_atm_a, pm2.5_atm_b,
+         rssi, uptime, memory, humidity, temperature, pressure, analog_input)
+```
+
+## Remove sensors with < 24 data points
+```{r, low-data-sensors}
+low_data_sensors <- pa_filtered %>% 
+  group_by(sensor_index) %>% summarize(n = n()) %>% arrange(n) %>% filter(n < 24)
+pa_filtered <- pa_filtered %>% 
+  filter(!(sensor_index %in% low_data_sensors$sensor_index))
+```
 
 ```{r, channel-a-b-plot, eval = TRUE, warning=FALSE}
-ggplot(purpleair_data, aes(x = pm2.5_atm_a, y = pm2.5_atm_b)) +
-  geom_point() +
-  labs(x = "Channel A PM2.5",
-       y = "Channel B PM2.5",
-       title = "PM2.5 Channel A vs B",
-       subtitle = "Axes limits set to 1000; more data points beyond the limit") +
-  theme_minimal() +
-  xlim(0, 1000) +
-  ylim(0, 1000)
+if (FALSE) {
+  p <- ggplot(pa_filtered, aes(x = pm2.5_atm_a, y = pm2.5_atm_b)) +
+    geom_point() +
+    labs(x = "Channel A PM2.5",
+         y = "Channel B PM2.5",
+         title = "PM2.5 Channel A vs B") +
+    theme_minimal()
+  
+  ggsave(filename = paste0(preprocessing_directory, "/plots/pa_filtered.png"),
+         plot = p, width = 6, height = 4)
+}
+
+img_path <- paste0(preprocessing_directory, "/plots/pa_filtered.png")
+knitr::include_graphics(img_path)
 ```
 
-## Check readings with inconsistencies between channel A and B 
+## Remove 24 hour periods of zeros or missing data
 
-```{r, inconsistent-purpleair, eval = TRUE, warning=FALSE}
-# Define thresholds (absolute difference and maximum pm2.5)
-threshold <- 50
-maxpm25 <- 2000
+```{r, rolling-zeros-missing}
+start_time <- min(pa_filtered$time_stamp, na.rm = TRUE)
+end_time <- max(pa_filtered$time_stamp, na.rm = TRUE)
+all_timestamps <- seq(from = start_time, to = end_time, by = "hour")
+all_sensor_indices <- unique(pa_filtered$sensor_index)
+complete_timestamps <- expand.grid(sensor_index = all_sensor_indices,
+                                   time_stamp = all_timestamps)
+pa_complete <- complete_timestamps %>%
+  left_join(pa_filtered, by = c("sensor_index", "time_stamp")) %>%
+  mutate(pm2.5_atm = ifelse(is.na(pm2.5_atm), -1, pm2.5_atm))
 
-# Filter inconsistent data
-inconsistent_readings <- purpleair_data %>% 
-  filter(abs(pm2.5_atm_a - pm2.5_atm_b) > threshold | pm2.5_atm_a >= maxpm25 | pm2.5_atm_b >= maxpm25)
-
-# Plot inconsistent readings
-ggplot(inconsistent_readings, aes(x = pm2.5_atm_a, y = pm2.5_atm_b)) +
-  geom_point() +
-  labs(
-    x = "Channel A PM2.5",
-    y = "Channel B PM2.5",
-    title = "Inconsistencies Between Channel A and B",
-    subtitle = "Axes limits set to 1000; more data points beyond the limit"
-  ) +
-  theme_minimal() +
-  xlim(0, 1000) +
-  ylim(0, 1000)
-```
-
-## Filter out inconsistencies
-
-```{r, filtered-purpleair, eval = TRUE}
-# Filter out rows where absolute difference is greater than threshold & PM2.5 < maximum
-purpleair_filtered <- purpleair_data %>%
-  filter(abs(pm2.5_atm_a - pm2.5_atm_b) <= threshold & pm2.5_atm_a < maxpm25 & pm2.5_atm_b < maxpm25)
-
-ggplot(purpleair_filtered, aes(x = pm2.5_atm_a, y = pm2.5_atm_b)) +
-  geom_point() +
-  labs(x = "Channel A PM2.5",
-       y = "Channel B PM2.5",
-       title = "PM2.5 Channel A vs B After Filtering") +
-  theme_minimal()
-
-# Remove unnecessary columns
-purpleair_filtered <- purpleair_filtered %>% select(-pm2.5_atm_a, -pm2.5_atm_b)
-```
-
-## Remove Sensors
-### Faulty: More than 40% of readings are zeros
-### Not Enough Data: Less than 0.5% of data available for our date range
-
-```{r, remove-sensors, eval = FALSE}
-# Generate the number of hours in date range
-start_time <- min(purpleair_filtered$time_stamp, na.rm = TRUE)
-end_time <- max(purpleair_filtered$time_stamp, na.rm = TRUE)
-n_timestamps <- length(seq(from = start_time, to = end_time, by = "hour"))
-
-# Available data for each sensor
-avail_data <- purpleair_filtered %>%
+pa_complete <- pa_complete %>%
   group_by(sensor_index) %>%
-  summarize(avail_data_percent = round(100 * n() / n_timestamps, 2)) %>%
-  arrange(avail_data_percent)
+  mutate(
+    is_zero_or_missing = ifelse(pm2.5_atm == 0 | pm2.5_atm == -1, 1, 0),
+    is_normal = ifelse(pm2.5_atm != 0 & pm2.5_atm != -1, 1, 0),
+    rolling_zeros_missing = rollapply(is_zero_or_missing, width = 24, FUN = sum,
+                                      align = "right", fill = NA),
+    rolling_normals = rollapply(is_normal, width = 24, FUN = sum, align = "right", fill = NA)
+  ) %>%
+  ungroup()
 
-# Remove sensors with less than 0.5% data
-sensors_missing_data <- avail_data %>% filter(avail_data_percent < 0.5)
-purpleair_filtered <- purpleair_filtered %>%
-  filter(!sensor_index %in% sensors_missing_data$sensor_index)
+# threshold 0.8 means >=20 hours missing from a 24 hour time period
+pa_complete <- pa_complete %>%
+  mutate(
+    proportion_zeros_missing = rolling_zeros_missing / 24,
+    flag_high_proportion = ifelse(proportion_zeros_missing >= 0.8, 1, 0)
+  ) 
 
+pa_complete <- pa_complete %>% filter(flag_high_proportion != 1) %>%
+  select(-is_zero_or_missing, -is_normal, -rolling_zeros_missing,
+         -rolling_normals, -proportion_zeros_missing, -flag_high_proportion)
+```
+
+## Plot sensors with >20% zeros 
+
+```{r, perc-zeros}
 # Percentage of zero readings for each sensor
-sensor_zero_readings <- purpleair_filtered %>%
+sensor_zero_readings <- pa_complete %>%
   group_by(sensor_index) %>%
-  summarize(percent_zeros = round(100 * sum(pm2.5_atm == 0) / n(), 2)) %>% 
-  arrange(desc(percent_zeros))
+  summarize(pct_zeros = round(100 * sum(pm2.5_atm == 0) / n(), 2),
+            pct_missing = round(100 * sum(pm2.5_atm == -1) / n(), 2)) %>%
+  filter(pct_zeros > 20)
 
-# Remove sensors with high percentage of zero readings (>40%)
-sensors_high_zeros <- sensor_zero_readings %>% filter(percent_zeros > 40)
-purpleair_filtered <- purpleair_filtered %>%
-  filter(!sensor_index %in% sensors_high_zeros$sensor_index)
+# Loop through each sensor and create plots
+for (i in 1:nrow(sensor_zero_readings)) {
+  s <- sensor_zero_readings$sensor_index[[i]]
+  data_sensor <- pa_complete %>% filter(sensor_index == s)
+  n <- nrow(data_sensor)
+  pz <- round(sensor_zero_readings$pct_zeros[i], 0)
+  pm <- round(sensor_zero_readings$pct_missing[i], 0)
+  
+  # Create a data frame with segment information
+  shifted_readings <- data.frame(
+    time_stamp = head(data_sensor$time_stamp, -1), 
+    time_stamp_shifted = tail(data_sensor$time_stamp, -1), 
+    pm2.5_atm = head(data_sensor$pm2.5_atm, -1), 
+    pm2.5_atm_shifted = tail(data_sensor$pm2.5_atm, -1)
+  )
+  
+  # Assign colors based on whether the pm2.5_atm value is zero or not
+  shifted_readings <- shifted_readings %>% 
+    mutate(flag = ifelse(pm2.5_atm == 0, "Zero", ifelse(pm2.5_atm == -1, "Missing", "Normal")))
+  
+  # Plot the segments
+  p <- ggplot(data=shifted_readings, aes(x=time_stamp, xend = time_stamp_shifted,
+                                         y=pm2.5_atm, yend = pm2.5_atm_shifted, 
+                                         color=flag)) +
+    geom_segment() +
+    scale_color_manual(values = c("Normal" = "black", "Missing" = "yellow",
+                                  "Zero" = "red"),
+                       name = "") + 
+    labs(x = "Time", y = "PM2.5", 
+         title = paste0("Sensor ", s, "\n",
+                        pz, "% zeros", "\n", 
+                        pm, "% missing",
+                        "\nNumber of readings: ", n)) +
+    theme_minimal()
+  
+  ggsave(filename = file.path(preprocessing_directory, "plots", paste0(
+    "pct", pz, "_sensor", s, ".png")),
+    plot = p, width = 8, height = 6)
+}
+```
+
+## View plots of sensors with >20% zeros
+
+```{r, zero-plots}
+# compare plots of different thresholds
+for (i in 1:nrow(sensor_zero_readings)) {
+  s <- sensor_zero_readings$sensor_index[[i]]
+  pz <- round(sensor_zero_readings$pct_zeros[i], 0)
+  img_path <- file.path(preprocessing_directory, "plots",
+                        paste0("pct", pz, "_sensor", s, ".png"))
+  knitr::include_graphics(img_path)
+}
+```
+
+## Remove sensor 20349 based on plots
+```{r, remove-sensor}
+pa_complete <- pa_complete %>%
+  filter(sensor_index != 20349) %>% filter(pm2.5_atm != -1)
 ```
 
 ## Save Filtered Data to CSV
 
-```{r, save-filtered-data, eval = FALSE}
+```{r, save-filtered-data, eval = TRUE}
 # Save filtered data
-write.csv(purpleair_filtered, file = file.path(preprocessing_directory, "purpleair_filtered_2018-2019.csv"), row.names = FALSE)
-```
-
-# Visualizations
-
-## Dataset info
-
-```{r, dataset-info, echo = FALSE}
-# Read filtered dataset
-purpleair_filtered <- fread(paste0(preprocessing_directory, "/purpleair_filtered_2018-2019.csv"))
-
-# Summarize the dataset
-cat("Number of Sensors: ",
-    length(unique(purpleair_filtered$sensor_index)), "\n\n",
-    "Date Range: ", as.character(date(min(purpleair_filtered$time_stamp))),
-    " to ", as.character(date(max(purpleair_filtered$time_stamp))), "\n")
-```
-
-```{r, pm25-dist, warning = FALSE}
-# Plot the distribution of PM2.5 levels
-ggplot(purpleair_filtered, aes(x = pm2.5_atm)) +
-  geom_histogram(binwidth = 1, fill = "steelblue", color = "black") +
-  labs(
-    title = "Distribution of PM2.5 Levels",
-    subtitle = "x-axis limit set to 100; more data points beyond the limit",
-    x = "PM2.5 ATM",
-    y = "Frequency"
-  ) +
-  theme_minimal() +
-  scale_y_continuous(labels = scales::comma) + # Make y-axis non-scientific
-  xlim(0, 100) # Limit x-axis to 0-100 to better visualize the concentration
-```
-
-## Plot daily trend for a random day and sensor
-
-```{r, random-sensor-day-plot, eval=TRUE}
-# Pick a random sensor and date (full 24 hrs available)
-random_sensor_data <- purpleair_filtered %>%
-  group_by(date = date(time_stamp), sensor_index) %>%
-  filter(n_distinct(hour(time_stamp)) == 24) %>%
-  ungroup() %>%
-  sample_n(1)
-
-# Get data for random sensor and day
-sensor_i_data <- purpleair_filtered %>%
-  filter(sensor_index == random_sensor_data$sensor_index) %>%
-  filter(date(time_stamp) == random_sensor_data$date)
-
-# Plot the daily trend for the selected sensor
-ggplot(sensor_i_data, aes(x = hour(time_stamp), y = pm2.5_atm)) +
-  geom_line() +
-  labs(
-    x = "Hour of the Day", 
-    y = "PM2.5 ATM", 
-    title = paste0("PM2.5 for Sensor ", as.integer(random_sensor_data$sensor_index), " on ", random_sensor_data$date)
-  ) +
-  theme_minimal()
-```
-
-## Number of Active Sensors per Month
-
-```{r, monthly-sensors-plot}
-monthly_sensors <- purpleair_filtered %>%
-  mutate(month = format(time_stamp, "%Y-%m")) %>%
-  select(sensor_index, month) %>%
-  distinct() %>%
-  group_by(month) %>%
-  summarize(count=n())
-
-ggplot(monthly_sensors, aes(x = month, y = count)) +
-  geom_bar(stat = "identity", fill = "steelblue") +
-  labs(
-    title = "Number of Active Sensors per Month",
-    x = "Month",
-    y = "Number of Active Sensors"
-  ) +
-  theme_minimal() +
-  theme(
-    axis.text.x = element_text(angle = 45, hjust = 1),
-    plot.title = element_text(hjust = 0.5)
-  )
-```
-
-## Sensor Activity Distribution
-
-```{r, cumulative-distribution-plot}
-# Summarize the number of active months per sensor
-sensor_activity <- purpleair_filtered %>%
-  mutate(month = format(time_stamp, "%Y-%m")) %>%
-  select(sensor_index, month) %>%
-  distinct() %>%
-  group_by(sensor_index) %>%
-  summarize(active_months = n(), .groups = 'drop')
-
-# Create the cumulative distribution
-sensor_activity_distribution <- sensor_activity %>%
-  group_by(active_months) %>%
-  summarize(count = n(), .groups = 'drop') %>%
-  arrange(desc(active_months)) %>%
-  mutate(
-    cumulative_count = cumsum(count),
-    cumulative_percentage = cumulative_count / sum(count) * 100
-  )
-
-  n_months <- max(sensor_activity_distribution$active_months)
-
-  # Plot cumulative distribution
-  ggplot(sensor_activity_distribution, aes(x = active_months, y = cumulative_count)) +
-    geom_line(color = "steelblue") +
-    geom_point(color = "steelblue") +
-    labs(
-      title = "Cumulative Number of Sensors (Number of Active Months)",
-      x = "Active Months",
-      y = "Number of Sensors"
-    ) +
-    theme_minimal() +
-    scale_y_continuous(limits = c(0, 800), breaks = seq(0, 800, 100)) +
-    scale_x_continuous(breaks = scales::pretty_breaks(n = n_months)) +
-    theme(axis.text.x = element_text(angle = 45, hjust = 1))
-```
-
-## Map Sensor Activity
-
-```{r, sensor-activity-map}
-# Join sensor activity data with sensor locations
-sensor_activity <- purpleair_filtered %>%
-  mutate(month = format(time_stamp, "%Y-%m")) %>%
-  select(sensor_index, month) %>%
-  distinct() %>%
-  group_by(sensor_index) %>%
-  summarize(active_months = n(), .groups = 'drop')
-
-activity <- purpleair_sensors %>% inner_join(sensor_activity, by = "sensor_index")
-
-# Define a color palette
-color_palette <- colorNumeric(palette = hcl.colors(24, palette = "Spectral"), domain = activity$active_months)
-
-# Create the leaflet map
-leaflet(activity) %>%
-  addProviderTiles("CartoDB") %>%
-  addCircleMarkers(
-    radius = ~active_months / 4,  # Circle size based on the number of active months
-    color = ~color_palette(active_months),  # Circle color based on the number of active months
-    fillOpacity = 0.7,
-    stroke = FALSE,  # No border for the circles
-    label = ~paste("Sensor Index:", sensor_index, "<br>Active Months:", active_months)
-  ) %>%
-  addLegend(
-    "bottomright", 
-    pal = color_palette, 
-    values = ~active_months, 
-    title = "Active Months", 
-    opacity = 1
-  )
-```
-
-## Plot random sensors
-
-```{r, plot-random-sensors}
-
-# Plot 4 random sensors
-subset_sensors <- sample(unique(purpleair_filtered$sensor_index), 4)
-filtered_data <- purpleair_filtered %>% filter(sensor_index %in% subset_sensors)
-
-# Create the faceted plot
-ggplot(filtered_data, aes(x = time_stamp, y = pm2.5_atm, color = as.factor(sensor_index))) +
-  geom_line() +
-  labs(
-    x = "Date", 
-    y = "PM2.5 ATM", 
-    title = "PM2.5 Levels Over Time by Sensor"
-  ) +
-  facet_wrap(~ sensor_index, scales = "fixed", ncol = 2) +
-  theme_minimal() +
-  theme(
-    axis.text.x = element_text(angle = 45, hjust = 1),
-    plot.title = element_text(hjust = 0.5),
-    legend.position = "none"
-  )
-```
-
-## Map Air Quality Index using average PM2.5
-```{r, map-AQI, eval=TRUE}
-# https://www.epa.gov/sites/default/files/2016-04/documents/2012_aqi_factsheet.pdf
-avg_pm25 <- purpleair_filtered %>%
-  group_by(sensor_index) %>%
-  summarize(avg_pm25 = mean(pm2.5_atm))
-
-# Define the intervals and corresponding colors
-intervals <- c(0, 12, 35.4, 55.4, 150.4, 250.4, Inf)
-AQI <- c("Good", "Moderate", "Unhealthy for Sensitive Groups", "Unhealthy", "Very Unhealthy", "Hazardous")
-
-# Create a new column with color intervals
-avg_pm25$AQI <- cut(avg_pm25$avg_pm25, breaks = intervals, labels = AQI, include.lowest = TRUE)
-
-pa_avgpm25 <- merge(purpleair_sensors, avg_pm25, by = "sensor_index")
-
-# Define a color palette function
-color_palette <- colorFactor(palette = c("green", "yellow", "orange", "red", "deeppink3", "darkred"), 
-                             levels = AQI)
-
-# Plot the average PM2.5 for each sensor with leaflet
-aqi_map <- leaflet(pa_avgpm25) %>%
-  addCircleMarkers(
-    radius = 2, 
-    color = ~color_palette(AQI), 
-    fillOpacity = 0.7, 
-    stroke = FALSE,
-    label = ~paste("Sensor Index:", sensor_index, "<br>Average PM2.5:", round(avg_pm25, 2), "<br>AQI:", AQI)
-  ) %>%
-  addProviderTiles("CartoDB") %>%
-  addLegend("bottomright", pal = color_palette, values = AQI, 
-            title = "Air Quality Index", opacity = 1) 
-
-aqi_map
+write.csv(pa_complete, file = file.path(preprocessing_directory, "purpleair_filtered_2018-2019.csv"), row.names = FALSE)
 ```
