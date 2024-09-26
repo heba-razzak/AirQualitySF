@@ -1,17 +1,11 @@
----
-title: "Wildfires"
-output: github_document
----
+Wildfires
+================
 
 # Wildfires
 
-```{r setup, include=FALSE}
-preprocessing_directory <- readr::read_file("inputs/preprocessing_directory.txt")
-options(scipen = 999)
-```
-
 ## Load required libraries
-```{r, load-libraries, message = FALSE, warning = FALSE}
+
+``` r
 library(data.table)
 library(tidyr)
 library(dplyr)      # Data manipulation
@@ -20,7 +14,7 @@ library(sf)         # Spatial data manipulation
 library(geosphere)  # For bearing calculation
 ```
 
-```{r}
+``` r
 # Data Source:
 # https://data.ca.gov/dataset/california-fire-perimeters-all1
 # Metadata (Column Descriptions):
@@ -52,7 +46,8 @@ purpleair_sensors <- st_transform(purpleair_sensors, st_crs(fire))
 ```
 
 ## purple air to fire distance and direction
-```{r}
+
+``` r
 # Get distances between purpleAir sensors and fires (within 100km)
 pa_fire_distances <- st_distance(purpleair_sensors, fire, by_element = FALSE)
 distances_df <- as.data.frame(as.table(pa_fire_distances))
@@ -71,7 +66,11 @@ fire_coords <- st_make_valid(fire) %>%  st_transform(crs = 4326) %>%
   st_centroid() %>% st_coordinates() %>%  as.data.frame() %>% 
   mutate(fire_id = fire$fire_id) %>% select(fire_id, X, Y) %>%
   rename(fire_x = X, fire_y = Y)
+```
 
+    ## Warning: st_centroid assumes attributes are constant over geometries
+
+``` r
 sensor_coords <- st_transform(purpleair_sensors, crs = 4326) %>% 
   st_coordinates() %>% as.data.frame() %>% 
   mutate(sensor_index = purpleair_sensors$sensor_index) %>%
@@ -88,7 +87,8 @@ pa_fire_dist_dir <- pa_fire_dist %>%
 ```
 
 ## joining purple air and fires by distance and dates
-```{r}
+
+``` r
 # Sensor index and active dates
 sensor_dates <- dataset %>% 
   mutate(sensor_date = as.Date(time_stamp)) %>%
@@ -103,20 +103,13 @@ purpleair_fires_df <- pa_fire_dist_dir %>%
   left_join(fire_df, by = "fire_id")
 ```
 
-```{r}
-pafire <- purpleair_fires_df %>%
-  mutate(fire_days1 = pmax(0, 1 + as.numeric(sensor_date - fire_start)),
-         fire_days2 = ifelse(fire_days1 == 0 , 0, 1 + pmax(0,as.numeric(sensor_date - fire_end))),
-         active_or_recent_fire = (fire_days2 == 1 | (fire_days2 > 1 & fire_days2 <= 8)),
-         fire_distance = round(fire_distance),
-         fire_acres = round(fire_acres)) %>% filter(sensor_index == 19051, fire_id == 6)
-# %>% filter(fire_days1 != fire_days2, fire_days1 < 10)
+    ## Warning in left_join(., sensor_dates, by = "sensor_index"): Detected an unexpected many-to-many relationship between `x` and `y`.
+    ## ℹ Row 1 of `x` matches multiple rows in `y`.
+    ## ℹ Row 10936 of `y` matches multiple rows in `x`.
+    ## ℹ If a many-to-many relationship is expected, set `relationship =
+    ##   "many-to-many"` to silence this warning.
 
-library(mapview)
-mapview(fire) + mapview(purpleair_sensors)
-```
-
-```{r}
+``` r
 # Create features for fire
 pafire <- purpleair_fires_df %>%
   mutate(fire_days1 = pmax(0, 1 + as.numeric(sensor_date - fire_start)),
@@ -127,8 +120,6 @@ pafire <- purpleair_fires_df %>%
   filter(active_or_recent_fire) %>%
   select(sensor_index, sensor_date, fire_days1, fire_days2, fire_distance, fire_acres, fire_direction)
 
-## ADD DISTANCE FILTER 
-
 # add fire features to dataset
 dataset <- dataset %>%
   mutate(sensor_date = as.Date(time_stamp)) %>%
@@ -137,6 +128,12 @@ dataset <- dataset %>%
   replace_na(list(fire_days1 = 0, fire_days2 = 0, fire_distance = 0, fire_acres = 0, fire_direction = 0))
 ```
 
-```{r}
+    ## Warning in left_join(., pafire, by = c(sensor_index = "sensor_index", sensor_date = "sensor_date")): Detected an unexpected many-to-many relationship between `x` and `y`.
+    ## ℹ Row 164474 of `x` matches multiple rows in `y`.
+    ## ℹ Row 73022 of `y` matches multiple rows in `x`.
+    ## ℹ If a many-to-many relationship is expected, set `relationship =
+    ##   "many-to-many"` to silence this warning.
+
+``` r
 fwrite(dataset, paste0(preprocessing_directory,"/final_dataset_fire.csv"))
 ```

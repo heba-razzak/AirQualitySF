@@ -419,6 +419,11 @@ dataset <- dataset %>%
   select(-pm2.5_atm_a, -pm2.5_atm_b, -date_created, -last_seen) %>%
   mutate(year = year - min(year))
 fwrite(dataset, paste0(preprocessing_directory,"/final_dataset.csv"))
-
 ```
+
+```{r}
+# ADDED FIRE FEATURES 
+dataset <- fread(paste0(preprocessing_directory, "/final_dataset_fire.csv"))
+```
+
 

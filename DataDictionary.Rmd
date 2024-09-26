@@ -11,6 +11,7 @@ var_types = NULL
 print(generate_summary_stats(airquality))
 
 ```
+
 ```{r}
 print(generate_summary_stats(airquality))
 x <- airquality$Day

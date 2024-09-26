@@ -14,11 +14,12 @@ To achieve this goal, the project integrates and analyzes diverse datasets sourc
     
 -   [Download PurpleAir Data](DownloadPurpleAirData.md): Downloading hourly PurpleAir PM2.5 data.
 
-    Download information for all PurpleAir sensors, then filter to area and dates needed. Download historical hourly air quality data for filtered PurpleAir sensors for each month, then combine into one file. Includes bar plot showing number of active PurpleAir sensors for each month.
+    Download information for all PurpleAir sensors, then filter to area and dates needed. Download historical hourly air quality data for filtered PurpleAir sensors for each month, then combine into one file. 
+    Visualizations: Map of PurpleAir Sensors in Bay Area, Map of PurpleAir Sensors in Bay Area in 2018-2019, Bar plot showing number of active PurpleAir sensors for each month.
     
 -   [Preprocessing PurpleAir](PreprocessingPurpleAir.md): Clean PurpleAir data points
 
-    Clean PurpleAir data points, ensuring data quality by dealing with outliers and inconsistencies. Visualization of outliers. To be added: Check if there's a pattern of sensors failing after an inconsistency is detected.
+    Clean PurpleAir data points, ensuring data quality by dealing with outliers and inconsistencies. Visualization of outliers.
 
 -   [Download OpenStreetMap Data](DownloadOSMData.md): Downloading OpenStreetMap (OSM) data for the Bay area, including roads, buildings, and trees.
 

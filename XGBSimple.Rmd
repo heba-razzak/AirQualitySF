@@ -3,10 +3,6 @@ title: "Model Building"
 output: github_document
 ---
 
-```{r, testing, eval = FALSE, include = FALSE}
-# preprocessing_directory <- paste0(readr::read_file("inputs/preprocessing_directory.txt"),"/test")
-```
-
 # Model Building
 
 ```{r, setup, include=FALSE}
@@ -24,14 +20,160 @@ library(ggplot2)        # plots
 library(data.table)     # Faster than dataframes (for big files)
 library(xgboost)        # XGBoost model
 library(caret)          # Preprocessing
-# devtools::install_github("heba-razzak/createDataDict")
-# library(createDataDict)
+
+library(caTools)
+library(cvms)
 ```
+
+
 
 ## Load Dataset and Preprocessing
 ```{r, load-dataset}
-# Read the dataset and select relevant features
 dataset <- fread(paste0(preprocessing_directory, "/final_dataset_fire.csv"))
+dataset <- dataset %>% select(-weatherstation)
+```
+
+```{r}
+# Sort the dataset by time_stamp
+dataset_xgb <- dataset %>%
+  arrange(time_stamp)
+
+# Set a 70% split by time_stamp
+split_index <- floor(0.7 * nrow(dataset_xgb))
+split_time <- dataset_xgb %>%
+  pull(time_stamp) %>%
+  .[split_index]
+
+# Split the dataset into training and testing sets
+train_set <- subset(dataset_xgb, time_stamp <= split_time)
+test_set <- subset(dataset_xgb, time_stamp > split_time)
+
+# Remove columns that won't be used in the model (time_stamp, sensor_index)
+X_train <- train_set %>% select(-time_stamp, -sensor_index)
+
+X_test <- test_set %>% select(-time_stamp, -sensor_index)
+
+# Define target variable 
+y_train <- X_train$pm2.5_atm 
+y_test <- X_test$pm2.5_atm  
+
+# Remove target variable from features
+X_train <- X_train %>% select(-pm2.5_atm) 
+X_test <- X_test %>% select(-pm2.5_atm) 
+```
+
+```{r}
+# Convert training and test data into DMatrix format for XGBoost
+xgb_train <- xgb.DMatrix(data = as.matrix(X_train), label = y_train)
+xgb_test <- xgb.DMatrix(data = as.matrix(X_test), label = y_test)
+```
+
+```{r}
+xgb_params <- list(
+  booster = "gbtree",
+  eta = 0.01,            # Learning rate
+  max_depth = 8,         # Maximum tree depth
+  gamma = 4,             # Minimum loss reduction required to make a further partition
+  subsample = 0.75,      # Subsample ratio of the training data
+  colsample_bytree = 1,  # Subsample ratio of columns when constructing trees
+  objective = "reg:squarederror",  # Use "reg:squarederror" for regression tasks
+  eval_metric = "rmse"   # Root Mean Square Error as evaluation metric
+)
+```
+
+```{r}
+# Train the XGBoost model
+xgb_model <- xgb.train(
+  params = xgb_params,  # Your previously defined parameters
+  data = xgb_train,     # Training data in DMatrix format
+  nrounds = 5000,       # Number of boosting rounds
+  verbose = 1           # Print information about the training process
+)
+
+# Print the model to inspect
+xgb_model
+```
+
+```{r}
+# Extract feature importance matrix for regression
+importance_matrix <- xgb.importance(
+  feature_names = colnames(X_train),  # Replace 'colnames(xgb_train)' with 'X_train' as we are working with matrices
+  model = xgb_model
+)
+
+# Display feature importance
+importance_matrix
+```
+
+```{r}
+# Plot feature importance
+xgb.plot.importance(importance_matrix)
+```
+
+```{r}
+# Generate predictions for the test set
+xgb_preds <- predict(xgb_model, as.matrix(X_test))
+
+# Convert the predictions into a dataframe
+xgb_preds <- as.data.frame(xgb_preds)
+colnames(xgb_preds) <- "PredictedPM2.5"  # Assuming 'pm2.5_atm' is your target variable
+xgb_preds$ActualPM2.5 <- y_test           # Actual values from the test set
+
+# Display the first few rows of predictions
+head(xgb_preds)
+```
+
+```{r}
+# Calculate RMSE (Root Mean Square Error)
+rmse <- sqrt(mean((xgb_preds$PredictedPM2.5 - xgb_preds$ActualPM2.5)^2))
+print(paste("RMSE:", rmse))
+
+# Calculate MAE (Mean Absolute Error)
+mae <- mean(abs(xgb_preds$PredictedPM2.5 - xgb_preds$ActualPM2.5))
+print(paste("MAE:", mae))
+
+# Calculate the R-squared value
+ss_res <- sum((xgb_preds$ActualPM2.5 - xgb_preds$PredictedPM2.5)^2)  # Sum of squares of residuals
+ss_tot <- sum((xgb_preds$ActualPM2.5 - mean(xgb_preds$ActualPM2.5))^2)  # Total sum of squares
+
+r_squared <- 1 - (ss_res / ss_tot)
+print(paste("R-squared:", r_squared))
+```
+
+
+```{r}
+# Plot predicted vs actual values
+library(ggplot2)
+ggplot(xgb_preds, aes(x = ActualPM2.5, y = PredictedPM2.5)) +
+  geom_point() +
+  geom_abline(intercept = 0, slope = 1, color = "red") +
+  labs(title = "Predicted vs Actual PM2.5 Levels", x = "Actual PM2.5", y = "Predicted PM2.5") +
+  theme_minimal()
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r, load-dataset}
+# Read the dataset and select relevant features
+dataset <- fread(paste0(preprocessing_directory, "/final_dataset.csv"))
 
 # Preprocess the dataset for modeling
 dataset_xgb <- dataset %>%
@@ -40,11 +182,6 @@ dataset_xgb <- dataset %>%
 # Save the transformed dataset
 saveRDS(dataset_xgb, file = paste0(model_directory, "/dataset_xgb.rds"))
 ```
-
-```{r}
-dataset
-```
-
 
 ## Train-Test Split
 ```{r, split-data}
