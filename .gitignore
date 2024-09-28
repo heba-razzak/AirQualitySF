@@ -15,3 +15,5 @@ OSM/bayarea_buildings_osm.gpkg
 /Model
 Preprocessing/pasensors_weatherstations3dp.gpkg
 /Preprocessing/CaliforniaFirePerimeters
+/code/data
+/code/inputs

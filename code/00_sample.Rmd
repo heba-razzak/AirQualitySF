@@ -1,0 +1,101 @@
+---
+title: "Download PurpleAir Data" 
+output: github_document
+knit: (function(input, ...) {rmarkdown::render(input, output_dir = "../docs", )})
+---
+
+```{r, setup, echo=FALSE}
+knitr::opts_chunk$set(fig.path = "../docs/plots/", fig.dim = c(6, 4))
+```
+
+```{r, github-packages, echo=FALSE}
+if (!"purpleAirAPI" %in% rownames(installed.packages())) {
+  suppressMessages({devtools::install_github("heba-razzak/purpleAirAPI")})
+}
+
+if (!"DataOverviewR" %in% rownames(installed.packages())) {
+  suppressMessages({devtools::install_github("heba-razzak/DataOverviewR")})
+}
+```
+
+Load required libraries
+
+```{r, load-libraries, message = FALSE, warning = FALSE}
+library(dplyr)         # Data manipulation
+```
+
+```{r, echo = FALSE}
+# CRS (coordinate reference system)
+crs = 4326
+```
+
+**Download Sensor Data**\
+Bold
+Links:\
+[Sensor fields](https://api.purpleair.com/#api-sensors-get-sensor-data)\
+[Field Descriptions](https://community.purpleair.com/t/api-history-fields-descriptions/4652)
+
+```{r, read-sensors-csv, echo = FALSE}
+# Read sensors data
+filepath <- file.path("data", "raw", "pa_sensors.csv")
+pa_sensors <- read.csv(filepath)
+pa_sf <- st_as_sf(pa_sensors, coords=c("longitude", "latitude"), crs = 4326)
+```
+---
+
+**Data Dictionary**
+
+```{r, data-dict1, echo = FALSE}
+desc <- data_description(iris, 
+                         var_desc = c("Sepal.Length" = "Sepal length",
+                                      "Sepal.Width" = "Sepal width"))
+data_dictionary(iris, 
+                data_title = "Iris", 
+                descriptions = desc, 
+                hide = c("NA_Count", "NA_Percentage", "N_Unique", "top_n"))
+```
+
+```{r, data-dict-pa2, echo = FALSE}
+data_dictionary(iris, 
+                data_title = "Missing Values",
+                hide = c("top_n", "Type", "N_Unique"))
+```
+
+**View data**
+
+```{r, data-head, echo = FALSE}
+knitr::kable(head(iris, 3), row.names = FALSE, format = "markdown")
+```
+
+---
+
+**Data Summary**
+
+```{r, data-summ, echo = FALSE}
+data_summary(iris, data_title = "Iris Summary", var_types = c(Species = "date"))
+```
+
+If file exists
+Write file
+
+```{r, download-data}
+filename <- paste0("filename", ".csv")
+filepath <- file.path("data", "raw", filename)
+
+if (!file.exists(filepath)) {
+  print("test")
+  # write.csv(df, file = filepath, row.names = FALSE)
+  # st_write(sf_obj, filepath, driver = "GPKG", append=FALSE, quiet=TRUE)
+}
+```
+
+Read file
+
+```{r, read-csv, echo = FALSE}
+filename <- paste0("filename", ".csv")
+filepath <- file.path("data", "raw", filename)
+
+# df <- read.csv(filepath)
+# sf_obj <- st_read(filepath, quiet = TRUE)
+
+```

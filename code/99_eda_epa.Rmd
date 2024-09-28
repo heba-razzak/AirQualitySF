@@ -1,0 +1,454 @@
+---
+title: "Download EPA Air Quality Data"
+output: github_document
+knit: (function(input, ...) {rmarkdown::render(input, output_dir = "../docs", )})
+---
+
+```{r, setup, echo=FALSE}
+knitr::opts_chunk$set(fig.path = "../docs/plots/", fig.dim = c(6, 4))
+
+aqs_creds = readr::read_file(file.path("inputs", "aqs_credentials.txt"))
+aqs_creds <- strsplit(aqs_creds, split = ", ")[[1]]
+```
+
+```{r, github-package, echo=FALSE}
+if (!"DataOverviewR" %in% rownames(installed.packages())) {
+  suppressMessages({devtools::install_github("heba-razzak/DataOverviewR")})
+}
+```
+
+Load required libraries
+
+```{r, load-libraries, message = FALSE, warning = FALSE}
+library(dplyr)         # Data manipulation
+library(sf)            # Spatial data manipulation
+library(RAQSAPI)       # EPA Air Quality API
+library(leaflet)       # Interactive maps
+library(ggplot2)       # Data visualization
+library(lubridate)     # Working with dates
+library(tidyr)         # Tidy messy data
+library(DataOverviewR) # Data dictionary and summary
+```
+
+Define Bay Area bounding box
+
+```{r, bbox-setup}
+# Define the Bay Area bounding box coordinates
+bbox <- c(xmin = -123.8, ymin = 36.9, xmax = -121.0, ymax = 39.0)
+
+# Convert the bounding box to an sf object and set the CRS (WGS 84)
+bbox_sf <- st_as_sfc(st_bbox(bbox))
+st_crs(bbox_sf) <- 4326
+
+# Create a buffered area around the bounding box (25 km buffer)
+new_bbox_sf <- st_buffer(bbox_sf, 25000)
+
+# Extract min and max latitudes and longitudes for the buffered area
+minlon <- bbox["xmin"]
+maxlon <- bbox["xmax"]
+minlat <- bbox["ymin"]
+maxlat <- bbox["ymax"]
+```
+
+```{r, aqs-setup, echo = FALSE}
+# Set AQS credentials
+aqs_credentials(username = aqs_creds[1], key = aqs_creds[2])
+
+# aqs_classes()
+# PM2.5 MASS/QA: PM2.5 Mass and QA Parameters	
+
+# aqs_parameters_by_class(class = "PM2.5 MASS/QA")
+# https://aqs.epa.gov/aqsweb/documents/codetables/parameter_classes.html
+# 88101:	PM2.5 - Local Conditions
+
+# aqs_sampledurations()
+# 1:	1 HOUR
+```
+
+**Download AQS Monitors in Bay Area**
+
+United States Environmental Protection Agency: Air Quality System (AQS)
+
+```{r, aqs-setup}
+# Get PM2.5 monitors in the Bay Area for the specified date range
+monitor_info <- aqs_monitors_by_box(
+  parameter = "88101",
+  bdate = as.Date("20180101", "%Y%m%d"),
+  edate = as.Date("20191231", "%Y%m%d"),
+  minlat = minlat, maxlat = maxlat,
+  minlon = minlon, maxlon = maxlon
+)
+
+# Convert monitor data to an sf object for mapping
+monitors_sf <- monitor_info %>%
+  select(si_id, latitude, longitude) %>%
+  st_as_sf(coords = c("longitude", "latitude"), crs = 4326)
+```
+
+Map of AQS Monitors in Bay Area
+
+```{r, map-aqs, eval=FALSE}
+# Create a leaflet map showing the monitors
+leaflet() %>%
+  addCircleMarkers(data = monitors_sf, popup = ~si_id,
+                   fillColor = "blue", fillOpacity = 1,
+                   color = "blue", weight = 2, opacity = 1, radius = 2) %>%
+  addProviderTiles("CartoDB")
+```
+
+**Download AQS Hourly Data in Bay Area**
+
+```{r, download-aqs-data}
+filepath <- file.path("data", "raw", "EPA_airquality.csv") 
+if (!file.exists(filepath)) { # (skip if full file exists)
+  # Loop through each monitor and download, process, and save data to CSV
+  for (i in 1:nrow(monitor_info)) {
+    id <- paste0(monitor_info$state_code[i], "_", 
+                 monitor_info$county_code[i], "_", 
+                 monitor_info$site_number[i])
+    filename <- paste0("aqs_2019_", id, ".csv")
+    filepath <- file.path("data", "raw", "AQS", filename)
+    if (!file.exists(filepath)) {
+      monitor_data <- aqs_sampledata_by_site(
+        parameter = "88101",
+        bdate = as.Date("20190101", "%Y%m%d"),
+        edate = as.Date("20191231", "%Y%m%d"),
+        stateFIPS = monitor_info$state_code[i],
+        countycode = monitor_info$county_code[i],
+        sitenum = monitor_info$site_number[i],
+        duration = "1"
+      )
+      
+      # Stop if monitor_data is empty
+      if (nrow(monitor_data) == 0) {
+        next
+      }
+      
+      # Process data by creating a timestamp and selecting relevant columns
+      processed_data <- monitor_data %>%
+        mutate(timestamp = paste(date_local, time_local),
+               pm25 = sample_measurement,
+               id = paste0(state_code,"_",county_code,"_",site_number)) %>%
+        select(timestamp, id, state_code, county_code, site_number, poc, pm25, latitude, longitude)
+      
+      write.csv(processed_data, file = filepath, row.names = FALSE)
+    }
+  }
+}
+```
+Combine AQS Files
+
+```{r, combine-aqs-files}
+filepath <- file.path("data", "raw", "EPA_airquality.csv")
+if (!file.exists(filepath)) {
+  # Get the list of AQS files
+  csv_files <- list.files(path = file.path("data", "raw", "AQS"), 
+                          pattern = "aqs_201[89]_.*\\.csv", 
+                          full.names = TRUE)
+  
+  # Read and combine all CSV files into a single data frame
+  combined_data <- csv_files %>%
+    lapply(read.csv) %>%
+    bind_rows()
+  
+  # Save the combined data to a single CSV file
+  write.csv(combined_data, 
+            file = filepath, 
+            row.names = FALSE)
+}
+```
+
+```{r, read-aqs, echo = FALSE}
+epa_data <- read.csv(file.path("data", "raw", "EPA_airquality.csv"))
+```
+
+---
+
+**Data Dictionary**
+
+```{r, data-dict1, echo = FALSE}
+# https://aqs.epa.gov/aqsweb/documents/AQS_Data_Dictionary.html
+poc = "This is the 'Parameter Occurrence Code' used to distinguish different instruments that measure the same parameter at the same site. There is no meaning to the POC (e.g. POC 1 does not indicate the primary monitor). For example, the first monitor established to measure carbon monoxide (CO) at a site could have a POC of 1. If an additional monitor were established at the same site to measure CO, that monitor could have a POC of 2. However, if a new instrument were installed to replace the original instrument used as the first monitor, that would be the same monitor and it would still have a POC of 1."
+
+desc <- data_description(
+  epa_data,
+  var_desc = c(
+    "timestamp" = "The date and time, in local standard time, to which the NAAQS average calculation applies.",
+    "id" = "AQS Monitor ID",
+    "state_code" = "The FIPS code of the state in which the monitor resides.",
+    "county_code" = "The FIPS County Code where the monitor resides.",
+    "site_number" = "An identifier for the site in the onwning agency's (e.g., not US EPA) numbering scheme.",
+    "poc" = "This is the 'Parameter Occurrence Code' used to distinguish different instruments that measure the same parameter at the same site.",
+    "pm25" = "PM2.5 - Local Conditions",
+    "latitude" = "The angular distance north or south of the equator measured in decimal degrees. North is positive.",
+    "longitude" = "The angular distance east or west of the prime meridian measured in decimal degrees. East is positive, West is negative."))
+
+data_dictionary(epa_data, 
+                data_title = "Air Quality System (AQS)", 
+                descriptions = desc, 
+                hide = c("NA_Count", "NA_Percentage", "N_Unique", "top_n"))
+```
+
+```{r, data-dict-pa2, echo = FALSE}
+data_dictionary(epa_data, 
+                data_title = "Missing Values",
+                hide = c("top_n", "Type", "N_Unique"))
+```
+
+**View data**
+
+```{r, data-head, echo = FALSE}
+knitr::kable(head(epa_data, 3), row.names = FALSE, format = "markdown")
+```
+
+---
+
+
+```{r, delete?-plots, eval=FALSE, include=FALSE}
+# Convert the timestamp to a POSIXct object
+epa_data <- epa_data %>%
+  mutate(timestamp = as.POSIXct(timestamp, format = "%Y-%m-%d %H:%M"))
+
+# Plot PM2.5 over time with one line for each si_id
+ggplot(epa_data, aes(x = timestamp, y = pm25, color = as.factor(id))) +
+  geom_line() +
+  labs(title = "PM2.5 Levels Over Time",
+       x = "Time",
+       y = "PM2.5 (µg/m³)",
+       color = "Monitor ID") +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+
+# Calculate the average PM2.5 over time
+avg_pm25 <- epa_data %>%
+  group_by(timestamp) %>%
+  summarise(avg_pm25 = mean(pm25, na.rm = TRUE),
+            med_pm25 = median(pm25, na.rm = TRUE))
+
+# Plot the average and median PM2.5 over time
+ggplot(avg_pm25, aes(x = timestamp)) +
+  geom_line(aes(y = avg_pm25, color = "Average PM2.5", group = 1)) +
+  geom_line(aes(y = med_pm25, color = "Median PM2.5", group = 1)) +
+  labs(title = "PM2.5 Levels Over Time",
+       x = "Time",
+       y = "PM2.5 (µg/m³)") +
+  scale_color_manual(name = "Legend",
+                     values = c("Average PM2.5" = "blue", "Median PM2.5" = "red")) +
+  theme_minimal()
+```
+
+
+```{r, aggregate-pm25-poc}
+# Filter out NA values in pm2.5 column
+epa_cleaned <- epa_data %>%
+  filter(!is.na(pm25)) %>% distinct()
+
+# Aggregate PM2.5 by site id (could have multiple readings for different poc)
+# POC is the Parameter Occurrence Code 
+# Used to uniquely identify monitor if >1 device measuring same pollutant
+epa_cleaned <- epa_cleaned %>%
+  mutate(pm25_poc1 = if_else(poc == 1, pm25, NA_real_),
+         pm25_poc3 = if_else(poc == 3, pm25, NA_real_),
+         pm25_poc4 = if_else(poc == 4, pm25, NA_real_))
+
+epa <- epa_cleaned %>%
+  group_by(timestamp, id, state_code, county_code, site_number, latitude, longitude) %>%
+  summarise(pm25_poc1 = if_else(all(is.na(pm25_poc1)), NA_real_, mean(pm25_poc1, na.rm = TRUE)),
+            pm25_poc3 = if_else(all(is.na(pm25_poc3)), NA_real_, mean(pm25_poc3, na.rm = TRUE)),
+            pm25_poc4 = if_else(all(is.na(pm25_poc4)), NA_real_, mean(pm25_poc4, na.rm = TRUE)),
+            pm25 = mean(pm25, na.rm = TRUE),
+            .groups = 'drop')
+```
+
+```{r, complete-time-series}
+# Number of hours in 2018-2019
+num_hrs <- 24*(yday(ymd("2018-12-31"))+yday(ymd("2019-12-31")))
+
+# Timestamp as POSIXct
+epa <- epa %>%
+  mutate(timestamp = as.POSIXct(timestamp, format = "%Y-%m-%d %H:%M"))
+
+# Create full timeseries
+full_timestamps <- seq(
+  from = min(epa$timestamp, na.rm = TRUE),
+  to = max(epa$timestamp, na.rm = TRUE),
+  by = "hour"
+)
+
+# Fill in missing timestamps
+epa_complete <- epa %>%
+  group_by(id, state_code, county_code, site_number, latitude, longitude) %>%
+  complete(timestamp = full_timestamps,
+           fill = list(pm25 = NA_real_,
+                       pm25_poc1 = NA_real_,
+                       pm25_poc3 = NA_real_,
+                       pm25_poc4 = NA_real_)
+  ) %>%
+  ungroup() %>%
+  select(timestamp, id, pm25, pm25_poc1, pm25_poc3, pm25_poc4, state_code, county_code, site_number, latitude, longitude)
+```
+
+```{r}
+# Calculate the total number of measurements for each id
+epa_agg <- epa_complete %>%
+  group_by(id, state_code, county_code, site_number, latitude, longitude) %>%
+  summarise(data_completeness = 1-round(sum(is.na(pm25))/num_hrs,2), .groups = 'drop') %>%
+  arrange(data_completeness)
+
+completeness_threshold <- 0.9
+keep_ids <- epa_agg %>% 
+  filter(data_completeness>=completeness_threshold) %>% 
+  select(id) %>% distinct()
+```
+
+
+```{r}
+library(dplyr)
+library(tidyr)
+
+epa_data_filtered <- epa_data_filtered %>%
+  mutate(timestamp = as.POSIXct(timestamp, format = "%Y-%m-%d %H:%M"))
+# Create a sequence of hourly timestamps from the start to the end of your data
+full_timestamps <- seq(
+  from = min(epa_data_filtered$timestamp, na.rm = TRUE),
+  to = max(epa_data_filtered$timestamp, na.rm = TRUE),
+  by = "hour"
+)
+epa_data_complete <- epa_data_filtered %>%
+  complete(timestamp = full_timestamps, id, fill = list(pm25 = NA, pm25_poc3 = NA, pm25_poc4 = NA))
+library(plotly)
+
+plot_ly(epa_data_complete, x = ~timestamp, y = ~pm25, color = ~id, type = 'scatter', mode = 'lines+markers') %>%
+  layout(title = "PM2.5 Levels Over Time by ID (with Complete Timestamps)",
+         xaxis = list(title = "Time"),
+         yaxis = list(title = "PM2.5 (µg/m³)"),
+         showlegend = TRUE)
+
+```
+
+```{r}
+site_data <- epa_data_complete %>% filter(id == "06_055_0003")
+site_data <- epa_data_complete %>% filter(id == "06_067_0012")
+site_data <- epa_data_complete %>% filter(id == "06_001_0015")
+site_data <- epa_data_complete %>% filter(id == "06_055_0004")
+site_data <- epa_data_complete %>% filter(id == "06_077_2010")
+site_data <- epa_data_complete %>% filter(id == "06_081_1001") # 0.95% complete
+
+plot_ly() %>%
+  # Plot the complete data (lines with breaks)
+  add_trace(data = site_data, x = ~timestamp, y = ~pm25, type = 'scatter', mode = 'lines',
+            line = list(width = 2, color = 'blue'), name = 'PM2.5') %>%
+  
+  # Plot the NA values as markers
+  add_trace(data = site_data, 
+            x = ~timestamp, y = ~ifelse(is.na(pm25), 0, NA), type = 'scatter', mode = 'markers',
+            marker = list(color = 'red', size = 8, symbol = 'circle-open'), name = 'NA Points') %>%
+  
+  layout(title = "PM2.5 Levels Over Time by ID (with NA Gaps)",
+         xaxis = list(title = "Time"),
+         yaxis = list(title = "PM2.5 (µg/m³)"),
+         showlegend = TRUE)
+
+```
+
+```{r}
+# Convert to spatial data frame
+site_measurements_sf <- st_as_sf(site_measurements, coords = c("longitude", "latitude"), crs = 4326)
+
+library(htmlwidgets)
+library(htmltools)
+# Create the leaflet map
+leaflet(site_measurements_sf) %>%
+  addProviderTiles("CartoDB.Positron") %>%
+  addCircleMarkers(
+    popup = ~paste("ID:", id, "<br>",
+                   "Total Measurements:", data_completeness),
+    label = ~paste("id:", htmlEscape(id),"Total Measurements:", htmlEscape(data_completeness)),
+    radius = ~2,
+    color = ~ifelse(data_completeness>0.9,"blue","red"),
+    fillOpacity = 0.7
+  )
+# addLegend("bottomright", title = "Total Measurements",
+#           values = site_measurements$total_measurements,
+#           colors = "blue", labels = site_measurements$total_measurements)
+
+```
+
+```{r}
+# Identify outliers using IQR method
+outliers <- epa_data %>%
+  group_by(id) %>%
+  mutate(
+    Q1 = quantile(pm25, 0.25, na.rm = TRUE),
+    Q3 = quantile(pm25, 0.75, na.rm = TRUE),
+    IQR = Q3 - Q1,
+    lower_bound = Q1 - 1.5 * IQR,
+    upper_bound = Q3 + 1.5 * IQR,
+    is_outlier = pm25 < lower_bound | pm25 > upper_bound
+  ) %>%
+  filter(is_outlier)
+
+print(outliers)
+```
+
+```{r}
+daily_outliers <- epa_data %>%
+  group_by(id, date = as.Date(timestamp)) %>%
+  mutate(
+    Q1 = quantile(pm25, 0.25, na.rm = TRUE),
+    Q3 = quantile(pm25, 0.75, na.rm = TRUE),
+    IQR = Q3 - Q1,
+    lower_bound = Q1 - 1.5 * IQR,
+    upper_bound = Q3 + 1.5 * IQR,
+    is_outlier = pm25 < lower_bound | pm25 > upper_bound
+  ) %>%
+  ungroup()
+
+# Check the identified outliers
+outliers_detected <- daily_outliers %>% filter(is_outlier)
+print(outliers_detected)
+```
+
+
+```{r}
+rolling_summary <- epa_data %>%
+  group_by(id) %>%
+  arrange(timestamp) %>%
+  mutate(rolling_avg = zoo::rollmean(pm25, k = 24 * 7, fill = NA, align = "right")) %>%
+  ungroup()
+
+# Plot rolling average
+ggplot(rolling_summary, aes(x = timestamp, y = rolling_avg, color = id)) +
+  geom_line() +
+  labs(title = "7-Day Rolling Average of PM2.5 Levels",
+       x = "Date",
+       y = "PM2.5 (µg/m³)") +
+  theme_minimal()
+
+```
+
+```{r}
+library(plotly)
+
+# Plot daily averages interactively
+plot_ly(daily_summary, x = ~date, y = ~avg_pm25, color = ~id, type = 'scatter', mode = 'lines') %>%
+  layout(title = "Daily Average PM2.5 Levels",
+         xaxis = list(title = "Date"),
+         yaxis = list(title = "Average PM2.5 (µg/m³)"))
+```
+
+```{r}
+# Identify extreme events (e.g., top 5% PM2.5 values)
+extreme_events <- daily_summary %>%
+  group_by(id) %>%
+  filter(avg_pm25 > quantile(avg_pm25, 0.95, na.rm = TRUE)) %>%
+  ungroup()
+
+# Plot extreme events
+ggplot(extreme_events, aes(x = date, y = avg_pm25, color = id)) +
+  geom_point(size = 2) +
+  labs(title = "Extreme PM2.5 Events (Top 5%)",
+       x = "Date",
+       y = "Average PM2.5 (µg/m³)") +
+  theme_minimal()
+```
