@@ -1,5 +1,5 @@
 ---
-title: "E PurpleAir"
+title: "Exploratory Data Analysis PurpleAir"
 output: github_document
 always_allow_html: true
 ---
