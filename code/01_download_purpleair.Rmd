@@ -149,8 +149,8 @@ filepath <- file.path("data", "raw", filename)
 # Read purple air data
 purpleair_data <- read.csv(filepath)
 purpleair_data <- purpleair_data %>% 
-  select(-pm2.5_atm, -pm2.5_atm_a, -pm2.5_atm_b,
-         -pm2.5_cf_1, -pm2.5_cf_1_a, -pm2.5_cf_1_b)
+  select(time_stamp, rssi, uptime, memory, humidity, temperature, pressure,
+         analog_input, pm2.5_alt, pm2.5_alt_a, pm2.5_alt_b, sensor_index, location_type)
 ```
 
 ```{r, write-sensors}
@@ -170,19 +170,19 @@ if (!file.exists(filepath)) {
 desc <- data_description(
   purpleair_data,
   var_desc = 
-    c("UTC (Unix) time stamp for that row of data.",
-      "The WiFi signal strength.",
-      "The time in minutes since the firmware started as last reported by the sensor.",
-      "Free HEAP memory in Kb.",
-      "Relative humidity inside of the sensor housing (%). This matches the 'Raw Humidity' map layer and on average is 4% lower than ambient conditions. Null if not equipped.",
-      "Temperature inside of the sensor housing (F). This matches the 'Raw Temperature' map layer and on average is 8°F higher than ambient conditions. Null if not equipped.",
-      "Current pressure in Millibars.",
-      "If anything is connected to it, the analog voltage on ADC input of the PurpleAir sensor control board.",
-      "Estimated mass concentration PM2.5 (µg/m³). PM2.5 are fine particulates with a diameter of fewer than 2.5 microns. ALT Formula for estimation.",
-      "Channel A ALT variant",
-      "Channel B ALT variant",
-      "The sensor's index. Can be used to add a sensor to a group or view its details.",
-      "The location type. Possible values are: 0 = Outside or 1 = Inside."
+    c("time_stamp" = "UTC (Unix) time stamp for that row of data.",
+      "rssi" = "The WiFi signal strength.",
+      "uptime" = "The time in minutes since the firmware started as last reported by the sensor.",
+      "memory" = "Free HEAP memory in Kb.",
+      "humidity" = "Relative humidity inside of the sensor housing (%). This matches the 'Raw Humidity' map layer and on average is 4% lower than ambient conditions. Null if not equipped.",
+      "temperature" = "Temperature inside of the sensor housing (F). This matches the 'Raw Temperature' map layer and on average is 8°F higher than ambient conditions. Null if not equipped.",
+      "pressure" = "Current pressure in Millibars.",
+      "analog_input" = "If anything is connected to it, the analog voltage on ADC input of the PurpleAir sensor control board.",
+      "pm2.5_alt" = "Estimated mass concentration PM2.5 (µg/m³). PM2.5 are fine particulates with a diameter of fewer than 2.5 microns. ALT Formula for estimation.",
+      "pm2.5_alt_a" = "Channel A ALT variant",
+      "pm2.5_alt_b" = "Channel B ALT variant",
+      "sensor_index" = "The sensor's index. Can be used to add a sensor to a group or view its details.",
+      "location_type" = "The location type. Possible values are: 0 = Outside or 1 = Inside."
     ))
 
 data_dictionary(purpleair_data, 
@@ -223,3 +223,28 @@ leaflet() %>%
                    color = "purple", weight = 2, opacity = 1, radius = 1) %>%
   addProviderTiles("CartoDB")
 ```
+
+```{r, channel-a-b}
+img_path <- file.path("../docs", "plots", "channel-a-vs-b.png")
+
+if (!file.exists(img_path)) {
+  # Replace NA with -1 for plotting
+  purpleair_data$pm2.5_alt_a[is.na(purpleair_data$pm2.5_alt_a)] <- -1
+  purpleair_data$pm2.5_alt_b[is.na(purpleair_data$pm2.5_alt_b)] <- -1
+  
+  # Plot valid points first (black)
+  p <- ggplot(purpleair_data, aes(x = pm2.5_alt_a, y = pm2.5_alt_b)) +
+    geom_point(data = subset(purpleair_data, pm2.5_alt_a != -1 & pm2.5_alt_b != -1), 
+               color = "black", alpha = 0.5) +
+    # Plot missing points on top (red)
+    geom_point(data = subset(purpleair_data, pm2.5_alt_a == -1 | pm2.5_alt_b == -1), 
+               color = "red", alpha = 0.5) +
+    labs(x = "Channel A PM2.5 (µg/m³)", y = "Channel B PM2.5 (µg/m³)", title = "PM2.5 Channel A vs B") +
+    theme_minimal()
+  
+  ggsave(filename = img_path, plot = p, width = 6, height = 4)
+}
+
+knitr::include_graphics(img_path)
+```
+

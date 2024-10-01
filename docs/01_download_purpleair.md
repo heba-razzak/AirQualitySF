@@ -55,7 +55,7 @@ purpleairs_sf <- st_intersection(pa_sf, bbox_sf)
 
 #### PurpleAir Sensors in Bay Area
 
-`26,961` rows
+`26,976` rows
 
 `0` rows with missing values
 
@@ -71,9 +71,9 @@ purpleairs_sf <- st_intersection(pa_sf, bbox_sf)
 
 | sensor_index | date_created | last_seen  | location_type | geometry                   |
 |-------------:|:-------------|:-----------|--------------:|:---------------------------|
-|           53 | 2016-02-04   | 2024-09-28 |             0 | POINT (-111.7048 40.24674) |
-|           77 | 2016-03-02   | 2024-09-28 |             0 | POINT (-111.8253 40.75082) |
-|          182 | 2016-08-01   | 2024-09-28 |             0 | POINT (-123.7423 49.16008) |
+|           53 | 2016-02-04   | 2024-10-01 |             0 | POINT (-111.7048 40.24674) |
+|           77 | 2016-03-02   | 2024-10-01 |             0 | POINT (-111.8253 40.75082) |
+|          182 | 2016-08-01   | 2024-10-01 |             0 | POINT (-123.7423 49.16008) |
 
 ------------------------------------------------------------------------
 
@@ -141,9 +141,9 @@ if (!file.exists(filepath)) {
 
 #### PurpleAir Bay Area Hourly 2018-2019
 
-`5,136,009` rows
+`5,982,095` rows
 
-`1,233,265` rows with missing values
+`1,445,842` rows with missing values
 
 |    Column     |   Type    |                                                                               Description                                                                               |
 |:-------------:|:---------:|:-----------------------------------------------------------------------------------------------------------------------------------------------------------------------:|
@@ -163,25 +163,25 @@ if (!file.exists(filepath)) {
 
 #### Missing Values
 
-`5,136,009` rows
+`5,982,095` rows
 
-`1,233,265` rows with missing values
+`1,445,842` rows with missing values
 
-|    Column     | NA_Count | NA_Percentage |
-|:-------------:|:--------:|:-------------:|
-|  time_stamp   |    0     |               |
-|     rssi      |  4,925   |      0%       |
-|    uptime     |  4,925   |      0%       |
-|    memory     |  2,233   |      0%       |
-|   humidity    |  83,285  |      2%       |
-|  temperature  |  83,285  |      2%       |
-|   pressure    | 387,284  |      8%       |
-| analog_input  |  2,444   |      0%       |
-|   pm2.5_alt   |   814    |      0%       |
-|  pm2.5_alt_a  |  2,206   |      0%       |
-|  pm2.5_alt_b  | 868,311  |      17%      |
-| sensor_index  |    0     |               |
-| location_type |    0     |               |
+|    Column     | NA_Count  | NA_Percentage |
+|:-------------:|:---------:|:-------------:|
+|  time_stamp   |     0     |               |
+|     rssi      |   5,136   |      0%       |
+|    uptime     |   5,136   |      0%       |
+|    memory     |   2,395   |      0%       |
+|   humidity    |  87,220   |      1%       |
+|  temperature  |  87,220   |      1%       |
+|   pressure    |  468,104  |      8%       |
+| analog_input  |   2,635   |      0%       |
+|   pm2.5_alt   |    884    |      0%       |
+|  pm2.5_alt_a  |   2,340   |      0%       |
+|  pm2.5_alt_b  | 1,005,212 |      17%      |
+| sensor_index  |     0     |               |
+| location_type |     0     |               |
 
 **View data**
 
@@ -205,3 +205,29 @@ leaflet() %>%
 ```
 
 ![](../docs/plots/map-sensors-1.png)<!-- -->
+
+``` r
+img_path <- file.path("../docs", "plots", "channel-a-vs-b.png")
+
+if (!file.exists(img_path)) {
+  # Replace NA with -1 for plotting
+  purpleair_data$pm2.5_alt_a[is.na(purpleair_data$pm2.5_alt_a)] <- -1
+  purpleair_data$pm2.5_alt_b[is.na(purpleair_data$pm2.5_alt_b)] <- -1
+  
+  # Plot valid points first (black)
+  p <- ggplot(purpleair_data, aes(x = pm2.5_alt_a, y = pm2.5_alt_b)) +
+    geom_point(data = subset(purpleair_data, pm2.5_alt_a != -1 & pm2.5_alt_b != -1), 
+               color = "black", alpha = 0.5) +
+    # Plot missing points on top (red)
+    geom_point(data = subset(purpleair_data, pm2.5_alt_a == -1 | pm2.5_alt_b == -1), 
+               color = "red", alpha = 0.5) +
+    labs(x = "Channel A PM2.5 (µg/m³)", y = "Channel B PM2.5 (µg/m³)", title = "PM2.5 Channel A vs B") +
+    theme_minimal()
+  
+  ggsave(filename = img_path, plot = p, width = 6, height = 4)
+}
+
+knitr::include_graphics(img_path)
+```
+
+<img src="../docs/plots/channel-a-vs-b.png" width="1800" />
