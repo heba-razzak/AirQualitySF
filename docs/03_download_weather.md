@@ -1,22 +1,9 @@
----
-title: "Download Weather Data"
-output: github_document
-knit: (function(input, ...) {rmarkdown::render(input, output_dir = "../docs", )})
----
-
-```{r, setup, include=FALSE}
-knitr::opts_chunk$set(fig.path = "../docs/plots/")
-```
-
-```{r, github-package, include=FALSE}
-if (!"DataOverviewR" %in% rownames(installed.packages())) {
-  suppressMessages({devtools::install_github("heba-razzak/DataOverviewR")})
-}
-```
+Download Weather Data
+================
 
 Load required libraries
 
-```{r, load-libraries, message = FALSE, warning = FALSE}
+``` r
 library(riem)          # Download weather station data
 library(dplyr)         # Data manipulation
 library(sf)            # Spatial data manipulation
@@ -26,7 +13,7 @@ library(DataOverviewR) # Data dictionary and summary
 
 Define Bay Area bounding box
 
-```{r, bbox-setup, eval=TRUE}
+``` r
 # Greater san fran area
 bbox <- c(xmin = -123.8, ymin = 36.9, xmax = -121.0, ymax = 39.0)
 
@@ -40,7 +27,7 @@ new_bbox_sf <- st_buffer(bbox_sf, 25000)
 
 Get weather stations in the Bay Area
 
-```{r, weather-stations, results = "hide", message = FALSE, warning = FALSE}
+``` r
 # Networks where name contains "california"
 cali_networks <- riem_networks() %>% filter(grepl("California", name, ignore.case = TRUE))
 stations <- riem_stations(network = cali_networks$code) %>% select(id,name,elevation,county,lon,lat)
@@ -58,7 +45,7 @@ st_write(stations_within_bbox, filepath, driver = "GPKG", append=FALSE)
 
 Map of Weather Stations in Bay Area
 
-```{r, stations-map}
+``` r
 leaflet() %>%
   addCircleMarkers(data = stations_within_bbox, popup = ~id,
                    fillColor = "blue", fillOpacity = 1,
@@ -66,9 +53,11 @@ leaflet() %>%
   addProviderTiles("CartoDB")
 ```
 
+![](../docs/plots/stations-map-1.png)<!-- -->
+
 Download Weather Station Hourly Data for 2018-2019
 
-```{r, download-weather, warning=FALSE}
+``` r
 filepath <- file.path("data", "raw", "weather.csv")
 
 if (!file.exists(filepath)) {
@@ -112,48 +101,52 @@ if (!file.exists(filepath)) {
 }
 ```
 
-```{r, read-weather-csv, echo = FALSE}
-filepath <- file.path("data", "raw", "weather.csv")
-
-# Read weather data
-measures_df <- read.csv(filepath)
-```
-
----
+------------------------------------------------------------------------
 
 **Data Dictionary**
 
-```{r, data-dict, echo = FALSE}
-desc <- data_description(
-  measures_df,
-  var_desc = 
-    c("station" = "Three or four character site identifier",
-      "timestamp" = "Timestamp of the observation (UTC)",
-      "temp_fahrenheit" = "Air Temperature in Fahrenheit, typically @ 2 meters",
-      "rel_humidity" = "Relative Humidity in %",
-      "wind_direction" = "Wind Direction in degrees from *true* north",
-      "wind_speed" = "Wind Speed in knots",
-      "wind_gust" = "Wind Gust in knots",
-      "lon" = "Longitude",
-      "lat" = "Latitude"
-    ))
+#### Weather Stations Bay Area Hourly 2018-2019
 
-data_dictionary(measures_df, 
-                data_title = "Weather Stations Bay Area Hourly 2018-2019", 
-                descriptions = desc,
-                hide = c("NA_Count", "NA_Percentage", "N_Unique", "top_n"))
-```
+`588,075` rows
 
-```{r, data-dict2, echo = FALSE}
-data_dictionary(measures_df, 
-                data_title = "Missing Values",
-                hide = c("top_n", "Type", "N_Unique"))
-```
+`513,500` rows with missing values
+
+|     Column      |   Type    |                     Description                     |
+|:---------------:|:---------:|:---------------------------------------------------:|
+|     station     | character |       Three or four character site identifier       |
+|    timestamp    | character |         Timestamp of the observation (UTC)          |
+| temp_fahrenheit |  numeric  | Air Temperature in Fahrenheit, typically @ 2 meters |
+|  rel_humidity   |  numeric  |               Relative Humidity in %                |
+| wind_direction  |  numeric  |     Wind Direction in degrees from *true* north     |
+|   wind_speed    |  numeric  |                 Wind Speed in knots                 |
+|    wind_gust    |  numeric  |                 Wind Gust in knots                  |
+|       lon       |  numeric  |                      Longitude                      |
+|       lat       |  numeric  |                      Latitude                       |
+
+#### Missing Values
+
+`588,075` rows
+
+`513,500` rows with missing values
+
+|     Column      | NA_Count | NA_Percentage |
+|:---------------:|:--------:|:-------------:|
+|     station     |    0     |               |
+|    timestamp    |    0     |               |
+| temp_fahrenheit |  9,514   |      2%       |
+|  rel_humidity   |  11,860  |      2%       |
+| wind_direction  |  5,113   |      1%       |
+|   wind_speed    |  1,216   |      0%       |
+|    wind_gust    | 512,330  |      87%      |
+|       lon       |    0     |               |
+|       lat       |    0     |               |
 
 **View data**
 
-```{r, data-head, echo = FALSE}
-knitr::kable(head(measures_df, 3), row.names = FALSE, format = "markdown")
-```
+| station | timestamp           | temp_fahrenheit | rel_humidity | wind_direction | wind_speed | wind_gust |       lon |     lat |
+|:--------|:--------------------|----------------:|-------------:|---------------:|-----------:|----------:|----------:|--------:|
+| AUN     | 2018-01-01 00:00:00 |            54.2 |     60.28000 |       23.33333 |   2.666667 |        NA | -121.0817 | 38.9548 |
+| AUN     | 2018-01-01 01:00:00 |            54.2 |     49.44333 |       16.66667 |   1.333333 |        NA | -121.0817 | 38.9548 |
+| AUN     | 2018-01-01 02:00:00 |            52.4 |     52.66000 |        0.00000 |   0.000000 |        NA | -121.0817 | 38.9548 |
 
----
+------------------------------------------------------------------------

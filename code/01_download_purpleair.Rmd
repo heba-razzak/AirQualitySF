@@ -33,8 +33,9 @@ library(leaflet)       # Interactive maps
 ```
 
 ```{r, echo = FALSE}
-# CRS (coordinate reference system)
-crs = 4326
+# Coordinate Reference System (CRS)
+# CRS 4326: WGS 84 (lat/lon in degrees, global standard for GPS)
+# CRS 3310: NAD83 / California Albers (projected in meters, used for California)
 ```
 
 **Download Sensor Data**\
@@ -58,12 +59,12 @@ Filter sensors to bay area
 
 ```{r, pasensors-bayarea, warning = FALSE}
 # Convert the PurpleAir data frame to an sf object
-pa_sf <- st_as_sf(pa, coords=c("longitude", "latitude"), crs = crs)
+pa_sf <- st_as_sf(pa, coords=c("longitude", "latitude"), crs = 4326)
 
 # Define bounding box for the Bay Area
 bbox <- c(xmin = -123.8, ymin = 36.9, xmax = -121.0, ymax = 39.0)
 bbox_sf <- st_as_sfc(st_bbox(bbox))
-st_crs(bbox_sf) <- crs
+st_crs(bbox_sf) <- 4326
 
 # Filter sensors within bounding box
 purpleairs_sf <- st_intersection(pa_sf, bbox_sf)
@@ -210,7 +211,7 @@ knitr::kable(head(purpleair_data, 3), row.names = FALSE, format = "markdown")
 # Read sensors data
 filepath <- file.path("data", "raw", "pa_sensors.csv")
 pa_sensors <- read.csv(filepath)
-pa_sf <- st_as_sf(pa_sensors, coords=c("longitude", "latitude"), crs = crs)
+pa_sf <- st_as_sf(pa_sensors, coords=c("longitude", "latitude"), crs = 4326)
 ```
 
 Map PurpleAir Sensors Bay Area (2018-2019)

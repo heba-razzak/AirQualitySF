@@ -1,76 +1,98 @@
 ---
 title: "Download OSM data"
-output: 
-  github_document:
-    output_dir: "docs"
+output: github_document
+knit: (function(input, ...) {rmarkdown::render(input, output_dir = "../docs", )})
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(fig.path = "docs/plots/")
-
-osm_directory <- readr::read_file("inputs/osm_directory.txt")
-purpleair_directory <- readr::read_file("inputs/purpleair_directory.txt")
-preprocessing_directory <- readr::read_file("inputs/preprocessing_directory.txt")
-sensor_directory <- paste0(osm_directory,"/sensor_data")
+```{r, setup, include=FALSE}
+knitr::opts_chunk$set(fig.path = "../docs/plots/")
 ```
 
-## Load required libraries
+```{r, github-package, include=FALSE}
+if (!"DataOverviewR" %in% rownames(installed.packages())) {
+  suppressMessages({devtools::install_github("heba-razzak/DataOverviewR")})
+}
+```
+
+Load required libraries
+
 ```{r, load-libraries, message = FALSE, warning = FALSE}
-library(osmdata) # Open Street Map
-library(dplyr) # For data manipulation
-library(data.table) # Faster than dataframes (for big files)
-library(sf) # For working with spatial data
-library(leaflet) # For interactive maps
-library(tigris) # Counties map data
-library(ggplot2)
+library(osmdata)       # Download OpenStreetMap Data
+library(dplyr)         # Data manipulation
+library(data.table)    # Working with large files
+library(sf)            # Spatial data manipulation
+library(leaflet)       # Interactive maps
+library(tigris)        # Counties map data
+library(ggplot2)       # Data visualization
+library(htmlwidgets)   # Creating HTML widgets
+library(webshot)       # Convert URL to image
 ```
 
-## Read files
-```{r, read-files, eval=TRUE}
-purpleair_data <- fread(paste0(preprocessing_directory,"/purpleair_filtered_2018-2019.csv"))
-purpleair_sensors <- st_read(paste0(preprocessing_directory, "/pasensors_weatherstations.gpkg"), quiet = TRUE)
+Read File: PurpleAir Sensors
+```{r, read-sensors-csv, echo = FALSE}
+# Read sensors data
+filepath <- file.path("data", "raw", "pa_sensors.csv")
+pa_sensors <- read.csv(filepath)
+pa_sf <- st_as_sf(pa_sensors, coords=c("longitude", "latitude"), crs = 4326)
 ```
 
-## Filter PurpleAir sensors
-```{r, filter_pa_sensors, eval=TRUE}
-# filter purpleair_sensors for our selected data
-filtered_sensors <- purpleair_sensors %>% 
-  filter(sensor_index %in% unique(purpleair_data$sensor_index))
-```
+Create 1 km octagon buffers around Purple Air Sensors
 
-## Create Buffers around Purple Air Sensors
 ```{r, pa-buffers, eval=TRUE}
-# change crs to be able to create buffers
-crs_ca <- 3310
-filtered_sensors <- st_transform(filtered_sensors, crs_ca)
+# CRS 3310: NAD83 / California Albers (projected in meters, used for California)
+pa_sf <- st_transform(pa_sf, 3310)
 
-# buffer radius in meters
-buffer <- 1000
-purpleairs_buffers <- st_buffer(filtered_sensors, dist=buffer, nQuadSegs=2)
+# Create a buffered octagon around the bounding box (1 km buffer)
+purpleairs_buffers <- st_buffer(pa_sf, dist=1000, nQuadSegs=2)
 
-# change crs back to original
-crs <- 4326
-filtered_sensors <- st_transform(filtered_sensors, crs)
-purpleairs_buffers <- st_transform(purpleairs_buffers, crs)
+# CRS 4326: WGS 84 (lat/lon in degrees, global standard for GPS)
+pa_sf <- st_transform(pa_sf, 4326)
+purpleairs_buffers <- st_transform(purpleairs_buffers, 4326)
 ```
 
-# Map of PurpleAir sensors with buffers
-```{r, pa-map, eval=TRUE, message=FALSE, results = FALSE}
-ca <- counties("California", cb = TRUE, progress_bar=FALSE)
+Map of PurpleAir sensors with buffers
 
-ggplot() +
-  geom_sf(data = ca, color="black", fill="antiquewhite", size=0.25) +
-  geom_sf(data = purpleairs_buffers, fill = "lavender") +
-  geom_sf(data = filtered_sensors, color = "purple", size = 0.1) +
-  coord_sf(xlim = c(-122.55, -122.35), ylim = c(37.83, 37.7)) +
-  theme(panel.background = element_rect(fill = "aliceblue")) +
-  xlab("Longitude") + ylab("Latitude") +
-  ggtitle("PurpleAir in San Francisco")
+```{r, stations-map}
+img_path <- file.path("../docs", "plots", "pa-buffer-map.png")
+if (!file.exists(img_path)) {
+  map_path <- file.path("../docs", "plots", "pa-buffer-map.html")
+  m <- leaflet() %>%
+    addCircleMarkers(data = pa_sf,
+                     fillColor = "purple", fillOpacity = 1,
+                     color = "purple", weight = 2, opacity = 1, radius = 2) %>%
+    addPolygons(data = purpleairs_buffers, popup = ~id,
+                color = "purple", opacity = 0.5, weight = 1,
+                fillColor = "lavender", fillOpacity = 0.2) %>%
+    addProviderTiles("CartoDB") %>%
+    setView(lng = -122.4194, lat = 37.7749, zoom = 12)
+  saveWidget(m, file = map_path)
+  webshot(map_path, file = img_path)
+}
+
+knitr::include_graphics(img_path)
 ```
-```{r}
-filtered_sensors
-purpleairs_buffers <- purpleairs_buffers %>% filter(sensor_index %in% z$sensor_index)
-```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 # Download OSM roads surrounding each sensor
@@ -355,10 +377,9 @@ ggplot() +
 
 ## Select small area of San Francisco to map
 ```{r, map-smaller-area, message=FALSE, warning=FALSE}
-crs = 4326
 bbox <- c(xmin = -122.46, ymin = 37.76, xmax = -122.42, ymax = 37.72)
 bbox_polygon <- st_as_sfc(st_bbox(bbox))
-st_crs(bbox_polygon) <- crs
+st_crs(bbox_polygon) <- 4326
 sanfran_roads <- st_intersection(bayarea_roads, bbox_polygon)
 sanfran_buildings <- st_intersection(bayarea_buildings, bbox_polygon)
 sanfran_trees <- st_intersection(bayarea_trees, bbox_polygon)

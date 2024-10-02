@@ -4,14 +4,14 @@ output: github_document
 knit: (function(input, ...) {rmarkdown::render(input, output_dir = "../docs", )})
 ---
 
-```{r, setup, echo=FALSE}
+```{r, setup, include=FALSE}
 knitr::opts_chunk$set(fig.path = "../docs/plots/")
 
 aqs_creds = readr::read_file(file.path("inputs", "aqs_credentials.txt"))
 aqs_creds <- strsplit(aqs_creds, split = ", ")[[1]]
 ```
 
-```{r, github-package, echo=FALSE}
+```{r, github-package, include=FALSE}
 if (!"DataOverviewR" %in% rownames(installed.packages())) {
   suppressMessages({devtools::install_github("heba-razzak/DataOverviewR")})
 }
@@ -41,13 +41,13 @@ bbox_sf <- st_as_sfc(st_bbox(bbox))
 st_crs(bbox_sf) <- 4326
 
 # Create a buffered area around the bounding box (25 km buffer)
-new_bbox_sf <- st_buffer(bbox_sf, 25000)
+new_bbox <- st_bbox(st_buffer(bbox_sf, 25000))
 
 # Extract min and max latitudes and longitudes for the buffered area
-minlon <- bbox["xmin"]
-maxlon <- bbox["xmax"]
-minlat <- bbox["ymin"]
-maxlat <- bbox["ymax"]
+minlon <- new_bbox["xmin"]
+maxlon <- new_bbox["xmax"]
+minlat <- new_bbox["ymin"]
+maxlat <- new_bbox["ymax"]
 ```
 
 ```{r, aqs-setup, echo = FALSE}
@@ -88,7 +88,6 @@ monitors_sf <- monitor_info %>%
 Map of AQS Monitors in Bay Area
 
 ```{r, map-aqs}
-# Create a leaflet map showing the monitors
 leaflet() %>%
   addCircleMarkers(data = monitors_sf, popup = ~si_id,
                    fillColor = "blue", fillOpacity = 1,

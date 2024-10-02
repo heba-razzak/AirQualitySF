@@ -141,13 +141,14 @@ Link Wildfires and PurpleAir sensors by distance, direction, recency
 # CONT_DATE Date 8 DD/MM/YYYY format, Containment date for the fire
 # GIS_ACRES Float 4 GIS calculated area, in acres
 
-filepath <- file.path("data", "processed", "wildfires.csv")
+filepath <- file.path("data", "processed", "wildfires_pa.csv")
 if (!file.exists(filepath)) {
   # Read purple air data
-  filepath <- file.path("data", "raw", "purpleair_2018-01-01_2019-12-31.csv")
-  purpleair_data <- read.csv(filepath)
+  filepath_pa <- file.path("data", "raw", "purpleair_2018-01-01_2019-12-31.csv")
+  purpleair_data <- read.csv(filepath_pa)
   purpleair_data <- purpleair_data %>% 
-    select(-pm2.5_atm, -pm2.5_atm_a, -pm2.5_atm_b, -pm2.5_cf_1, -pm2.5_cf_1_a, -pm2.5_cf_1_b)
+  select(time_stamp, rssi, uptime, memory, humidity, temperature, pressure,
+         analog_input, pm2.5_alt, pm2.5_alt_a, pm2.5_alt_b, sensor_index, location_type)
   
   # Fire dates: 2018, 2019 (& 5 days before 2018)
   fire <- st_read(
