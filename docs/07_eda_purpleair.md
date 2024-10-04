@@ -74,6 +74,7 @@ purpleair_data <- purpleair_data %>%
 ```
 
 Histograms for numerical columns
+
 ![](../docs/plots/hist-1.png)<!-- -->![](../docs/plots/hist-2.png)<!-- -->![](../docs/plots/hist-3.png)<!-- -->![](../docs/plots/hist-4.png)<!-- -->![](../docs/plots/hist-5.png)<!-- -->![](../docs/plots/hist-6.png)<!-- -->![](../docs/plots/hist-7.png)<!-- -->![](../docs/plots/hist-8.png)<!-- -->![](../docs/plots/hist-9.png)<!-- -->![](../docs/plots/hist-10.png)<!-- -->
 
 Bar Plots for categorical columns

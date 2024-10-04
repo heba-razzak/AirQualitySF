@@ -1,8 +1,6 @@
 Exploratory Data Analysis: Weather Data
 ================
 
-United States Environmental Protection Agency: Air Quality System (AQS)
-
 ------------------------------------------------------------------------
 
 **Data Summary**
@@ -35,21 +33,9 @@ character
 ------------------------------------------------------------------------
 
 Histograms for numerical columns
-![](../docs/plots/hist-1.png)<!-- -->![](../docs/plots/hist-2.png)<!-- -->![](../docs/plots/hist-3.png)<!-- -->![](../docs/plots/hist-4.png)<!-- -->![](../docs/plots/hist-5.png)<!-- -->![](../docs/plots/hist-6.png)<!-- -->![](../docs/plots/hist-7.png)<!-- -->
+
+![](../docs/plots/hist-1.png)<!-- -->![](../docs/plots/hist-2.png)<!-- -->![](../docs/plots/hist-3.png)<!-- -->![](../docs/plots/hist-4.png)<!-- -->![](../docs/plots/hist-5.png)<!-- -->
 
 Bar Plots for categorical columns
 
-![](../docs/plots/bar-plots-1.png)<!-- -->![](../docs/plots/bar-plots-2.png)<!-- -->![](../docs/plots/bar-plots-3.png)<!-- -->![](../docs/plots/bar-plots-4.png)<!-- -->![](../docs/plots/bar-plots-5.png)<!-- -->![](../docs/plots/bar-plots-6.png)<!-- -->![](../docs/plots/bar-plots-7.png)<!-- -->
-
-<!-- # FIRE CALCULATION -->
-<!-- ```{r} -->
-<!-- # Create a combined score based on distance and recency -->
-<!-- fire_impact <- purpleair_fires_df %>% -->
-<!--   mutate( -->
-<!--     recency_weight = 1 + max(0, fire_days1 - fire_days2), -->
-<!--     distance_weight = 1 / fire_distance, -->
-<!--     impact_score = recency_weight * distance_weight -->
-<!--   ) %>% -->
-<!--   group_by(sensor_index, sensor_date) %>% -->
-<!--   slice_max(impact_score)  # Keep fire with highest impact score for each sensor and date -->
-<!-- ``` -->
+![](../docs/plots/bar-plots-1.png)<!-- -->

@@ -28,7 +28,6 @@ library(htmlwidgets)   # Creating HTML widgets
 library(webshot)       # Convert URL to image
 ```
 
-Read File: PurpleAir Sensors
 ```{r, read-sensors-csv, echo = FALSE}
 # Read sensors data
 filepath <- file.path("data", "raw", "pa_sensors.csv")

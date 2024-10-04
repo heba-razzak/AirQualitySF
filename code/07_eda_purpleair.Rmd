@@ -177,6 +177,7 @@ purpleair_data <- purpleair_data %>%
 ```
 
 Histograms for numerical columns
+
 ```{r, hist, echo = FALSE}
 cols <- c("pm2.5_alt", "pm2.5_alt_a", "pm2.5_alt_b", "rssi", "uptime", 
           "memory", "humidity", "temperature", "pressure", "analog_input")

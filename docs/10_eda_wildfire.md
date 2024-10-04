@@ -48,6 +48,7 @@ date
 ------------------------------------------------------------------------
 
 Histograms for numerical columns
+
 ![](../docs/plots/hist-1.png)<!-- -->![](../docs/plots/hist-2.png)<!-- -->![](../docs/plots/hist-3.png)<!-- -->![](../docs/plots/hist-4.png)<!-- -->![](../docs/plots/hist-5.png)<!-- -->![](../docs/plots/hist-6.png)<!-- -->![](../docs/plots/hist-7.png)<!-- -->
 
 Bar Plots for categorical columns

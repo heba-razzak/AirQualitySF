@@ -37,9 +37,10 @@ data_summary(aqs_data, data_title = "AQS Summary")
 ---
 
 Histograms for numerical columns
+
 ```{r, hist, echo = FALSE}
 numeric_cols <- names(aqs_data)[sapply(aqs_data, is.numeric)]
-numeric_cols <- setdiff(numeric_cols, c("state_code"))
+numeric_cols <- setdiff(numeric_cols, c("state_code", "longitude", "latitude"))
 # Loop through the columns and plot histograms
 for (col in numeric_cols) {
   x <- aqs_data[[col]]
@@ -57,10 +58,15 @@ Bar Plots for categorical columns
 
 ```{r, bar-plots, echo = FALSE}
 non_numeric_cols <- names(aqs_data)[sapply(aqs_data, Negate(is.numeric))]
-non_numeric_cols <- setdiff(numeric_cols, c("timestamp"))
+non_numeric_cols <- setdiff(non_numeric_cols, c("id", "timestamp"))
 
 for (col in non_numeric_cols) {
-  # Plot the histogram using barplot for categorical data
-  barplot(table(aqs_data[[col]]), main = paste("Histogram of", col), ylab = "Frequency")
+  col_data <- as.data.frame(table(aqs_data[[col]]))
+  p <- ggplot(col_data, aes(x = reorder(Var1, -Freq), y = Freq)) +
+    geom_bar(stat = "identity", fill = "steelblue") +
+    labs(title = paste("Histogram of", col), x = col, y = "Frequency") +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  print(p)
 }
 ```

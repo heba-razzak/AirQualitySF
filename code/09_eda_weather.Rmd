@@ -36,6 +36,7 @@ data_summary(weather_data, data_title = "Weather Summary")
 ---
 
 Histograms for numerical columns
+
 ```{r, hist, echo = FALSE}
 numeric_cols <- names(weather_data)[sapply(weather_data, is.numeric)]
 numeric_cols <- setdiff(numeric_cols, c("lon", "lat"))

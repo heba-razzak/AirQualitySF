@@ -37,6 +37,7 @@ data_summary(wildfires, data_title = "Wildfire Summary")
 ---
 
 Histograms for numerical columns
+
 ```{r, hist, echo = FALSE}
 numeric_cols <- names(wildfires)[sapply(wildfires, is.numeric)]
 numeric_cols <- setdiff(numeric_cols, c("lon", "lat"))
