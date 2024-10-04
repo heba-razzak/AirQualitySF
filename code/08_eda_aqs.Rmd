@@ -1,5 +1,5 @@
 ---
-title: "Exploratory Data Analysis: Weather Data" 
+title: "Exploratory Data Analysis: Air Quality System (AQS)" 
 output: github_document
 knit: (function(input, ...) {rmarkdown::render(input, output_dir = "../docs", )})
 ---
@@ -15,14 +15,15 @@ if (!"DataOverviewR" %in% rownames(installed.packages())) {
 }
 ```
 
+United States Environmental Protection Agency: Air Quality System (AQS)
+
 ```{r, load-libraries, message = FALSE, warning = FALSE, echo = FALSE}
 library(dplyr)         # Data manipulation
 library(DataOverviewR) # Data dictionary and summary
 ```
 
-```{r, read-weather-csv, echo = FALSE}
-filepath <- file.path("data", "raw", "weather.csv")
-weather_data <- read.csv(filepath)
+```{r, read-aqs, echo = FALSE}
+aqs_data <- read.csv(file.path("data", "raw", "EPA_airquality.csv"))
 ```
 
 ---
@@ -30,18 +31,18 @@ weather_data <- read.csv(filepath)
 **Data Summary**
 
 ```{r, data-summ, echo = FALSE}
-data_summary(weather_data, data_title = "Weather Summary")
+data_summary(aqs_data, data_title = "AQS Summary")
 ```
 
 ---
 
 Histograms for numerical columns
 ```{r, hist, echo = FALSE}
-numeric_cols <- names(weather_data)[sapply(weather_data, is.numeric)]
-numeric_cols <- setdiff(numeric_cols, c("lon", "lat"))
+numeric_cols <- names(aqs_data)[sapply(aqs_data, is.numeric)]
+numeric_cols <- setdiff(numeric_cols, c("state_code"))
 # Loop through the columns and plot histograms
 for (col in numeric_cols) {
-  x <- weather_data[[col]]
+  x <- aqs_data[[col]]
   
   # If max is much larger than the 99th percentile, filter the data for plotting
   p99 <- quantile(x, 0.99, na.rm = TRUE)
@@ -55,11 +56,11 @@ for (col in numeric_cols) {
 Bar Plots for categorical columns
 
 ```{r, bar-plots, echo = FALSE}
-non_numeric_cols <- names(weather_data)[sapply(weather_data, Negate(is.numeric))]
-non_numeric_cols <- setdiff(non_numeric_cols, c("timestamp"))
+non_numeric_cols <- names(aqs_data)[sapply(aqs_data, Negate(is.numeric))]
+non_numeric_cols <- setdiff(numeric_cols, c("timestamp"))
 
 for (col in non_numeric_cols) {
   # Plot the histogram using barplot for categorical data
-  barplot(table(weather_data[[col]]), main = paste("Histogram of", col), ylab = "Frequency")
+  barplot(table(aqs_data[[col]]), main = paste("Histogram of", col), ylab = "Frequency")
 }
 ```

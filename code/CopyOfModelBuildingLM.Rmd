@@ -1,51 +1,141 @@
 ---
-title: "Model Building"
+title: "Model Building LM"
 output: github_document
+knit: (function(input, ...) {rmarkdown::render(input, output_dir = "../docs", )})
 ---
 
-```{r, testing, eval = FALSE, include = FALSE}
-# preprocessing_directory <- paste0(readr::read_file("inputs/preprocessing_directory.txt"),"/test")
+```{r, setup, include=FALSE}
+knitr::opts_chunk$set(fig.path = "../docs/plots/")
 ```
 
-# Model Building
+Load required libraries
 
-```{r setup, include=FALSE}
-preprocessing_directory <- readr::read_file("inputs/preprocessing_directory.txt")
-model_directory <- readr::read_file("inputs/model_directory.txt")
-options(scipen = 999)
-```
-
-## Load required libraries
 ```{r, load-libraries, message = FALSE, warning = FALSE}
-library(lubridate) # For dates
-library(dplyr) # For data manipulation
-library(tidyr) # pivot
-library(ggplot2) # plots
-library(data.table) # Faster than dataframes (for big files)
-# library(randomForest) # random forest model
-# library(xgboost)
-# library(mlr)
-# library(caTools) # Split train and test groups
-# library(car)
-# devtools::install_github("heba-razzak/createDataDict")
-# library(createDataDict)
+library(dplyr)         # For data manipulation
+library(data.table)    # Working with large files
+library(ggplot2)       # Plots
+library(timeDate)
+```
+
+Read files 
+
+```{r, read-purpleair-csv, echo = FALSE, results = "hide", message = FALSE}
+purpleair_data <- data.frame(fread(file.path("data", "raw", "purpleair_2018-01-01_2019-12-31.csv")))
+```
+
+
+```{r}
+# data_dictionary(dataset_lr, hide = c("N_Unique", "top_n"))
 ```
 
 ```{r}
-dataset_lr <- fread(paste0(preprocessing_directory, "/final_dataset_fire.csv")) %>% rename(target = pm2.5_atm)
-```
+dataset_lr <- purpleair_data %>% 
+  select(pm2.5_alt, time_stamp, sensor_index, rssi, uptime, memory, humidity, temperature, pressure,
+         analog_input, location_type) %>% rename(target = pm2.5_alt) %>% distinct
+dataset_lr <- dataset_lr %>% mutate(pressure = ifelse(is.na(pressure),-1,pressure))
 
-## Remove columns with >50% NA
-```{r}
-keep_vars <- dataset_lr %>% summarize_all(is.na) %>% summarize_all(sum) %>% 
-  pivot_longer(cols = 1:ncol(dataset_lr), names_to = "variable", values_to = "count") %>%
-  mutate(pct = 100*round(count/nrow(dataset_lr),2)) %>% filter(pct<50) %>% pull(variable)
+holidays <- as.Date(c(holidayNYSE(2019), holidayNYSE(2018)))
 
 dataset_lr <- dataset_lr %>%
-  select(all_of(keep_vars))
+  mutate(
+    time_stamp = lubridate::as_datetime(time_stamp),
+    local_timestamp = lubridate::with_tz(time_stamp, tzone = "America/Los_Angeles"),
+    local_date = as.Date(local_timestamp, tz="America/Los_Angeles"),
+    dow = lubridate::wday(local_timestamp),
+    hour = lubridate::hour(local_timestamp),
+    day = lubridate::day(local_timestamp),
+    month = lubridate::month(local_timestamp),
+    year = ifelse(lubridate::year(local_timestamp) == 2019, 1, 0),
+    holiday = ifelse(local_date %in% holidays, 1, 0)
+  ) %>% select(-local_date, -local_timestamp)
 ```
 
-## Linear Regression
+<!-- # LSTM -->
+<!-- ```{r} -->
+<!-- library(keras) -->
+
+<!-- normalize <- function(x) { -->
+<!--   return((x - min(x)) / (max(x) - min(x))) -->
+<!-- } -->
+
+<!-- dataset_lr_scaled <- as.data.frame(lapply(dataset_lr, normalize)) -->
+
+<!-- ``` -->
+
+<!-- ```{r} -->
+<!-- create_sequences <- function(data, n_timesteps) { -->
+<!--   X <- array(NA, dim = c(nrow(data) - n_timesteps, n_timesteps, ncol(data) - 1)) -->
+<!--   y <- array(NA, dim = c(nrow(data) - n_timesteps, 1)) -->
+
+<!--   for (i in 1:(nrow(data) - n_timesteps)) { -->
+<!--     X[i, , ] <- as.matrix(data[i:(i + n_timesteps - 1), 1:(ncol(data) - 1)]) -->
+<!--     y[i] <- data[i + n_timesteps, ncol(data)]  # Target column (the one you are predicting) -->
+<!--   } -->
+
+<!--   list(X = X, y = y) -->
+<!-- } -->
+
+<!-- # Define timesteps (for example, 24 timesteps if using hourly data for 1 day of history) -->
+<!-- n_timesteps <- 24 -->
+<!-- sequences <- create_sequences(dataset_lr_scaled, n_timesteps) -->
+<!-- X_train <- sequences$X -->
+<!-- y_train <- sequences$y -->
+<!-- ``` -->
+
+<!-- ```{r} -->
+<!-- # Build the LSTM model -->
+<!-- model <- keras_model_sequential() %>% -->
+<!--   layer_lstm(units = 50, return_sequences = TRUE, input_shape = c(n_timesteps, ncol(dataset_lr_scaled) - 1)) %>% -->
+<!--   layer_lstm(units = 50, return_sequences = FALSE) %>% -->
+<!--   layer_dense(units = 25, activation = 'relu') %>% -->
+<!--   layer_dense(units = 1) -->
+
+<!-- # Compile the model -->
+<!-- model %>% compile( -->
+<!--   loss = 'mean_squared_error', -->
+<!--   optimizer = 'adam' -->
+<!-- ) -->
+<!-- ``` -->
+
+<!-- ```{r} -->
+<!-- # Train the LSTM model -->
+<!-- model %>% fit( -->
+<!--   X_train, -->
+<!--   y_train, -->
+<!--   epochs = 20,      # Adjust number of epochs for better results -->
+<!--   batch_size = 32,  # Adjust batch size as needed -->
+<!--   validation_split = 0.2  # Use part of the data for validation -->
+<!-- ) -->
+<!-- ``` -->
+
+
+<!-- ```{r} -->
+<!-- # Make predictions -->
+<!-- predictions <- model %>% predict(X_train) -->
+
+<!-- # (Optional) Reverse normalization if needed -->
+<!-- denormalize <- function(x, min_val, max_val) { -->
+<!--   return(x * (max_val - min_val) + min_val) -->
+<!-- } -->
+<!-- ``` -->
+
+<!-- ```{r} -->
+<!-- # Calculate RMSE, MAE, or other metrics to evaluate performance -->
+<!-- rmse <- sqrt(mean((predictions - y_train)^2)) -->
+<!-- mae <- mean(abs(predictions - y_train)) -->
+
+<!-- cat("RMSE:", rmse, "\n") -->
+<!-- cat("MAE:", mae, "\n") -->
+<!-- ``` -->
+
+
+# Linear 
+
+```{r}
+dataset_lr <- dataset_lr %>%
+  mutate(across(c("rssi", "uptime", "memory", "humidity",
+                  "temperature", "pressure", "analog_input"), scale))
+```
 
 ```{r}
 dataset_lr <- na.omit(dataset_lr)
@@ -55,11 +145,11 @@ split_index <- floor(0.7 * nrow(arrange(dataset_lr, time_stamp)))
 
 # Find the date at this index
 split_time <- dataset_lr %>% arrange(time_stamp) %>%
-  pull(time_stamp) %>% .[floor(0.7 * nrow(dataset_lr))]
+  pull(time_stamp) %>% .[split_index]
 
 # Split the data into training and testing sets based on the split_time
 train <- subset(dataset_lr, time_stamp <= split_time) %>% dplyr::select(-time_stamp, -sensor_index)
-test <- subset(dataset_lr, time_stamp > split_time)
+test <- subset(dataset_lr, time_stamp > split_time) 
 
 # Save timestamp and sensor index for identifying problem areas
 test_time_sensor <- test %>% select(time_stamp, sensor_index)
@@ -71,11 +161,16 @@ test <- test %>% dplyr::select(-time_stamp, -sensor_index)
 test_label <- test$target
 
 # Drop target column from test
-test <- test %>% dplyr::select(-target)
+test <- test %>% select(-target)
 
 # Linear Regression Model
 linear_model <- lm(target ~ ., data = train)
+```
 
+
+
+
+```{r}
 # # Multicollinearity
 # vif_values <- vif(linear_model)
 # print("Variance Inflation Factors")
@@ -147,9 +242,12 @@ results <- test %>%
     Predicted = linear_predictions,
     AbsDifference = abs(test_label - linear_predictions)
   ) %>%
-  bind_cols(test_time_sensor) %>% 
+bind_cols(test_time_sensor) %>%
   arrange(desc(AbsDifference))
+```
 
+
+```{r}
 # Plot to show which days have the most errors
 error_by_day <- results %>%
   mutate(date = as.Date(time_stamp)) %>%

@@ -18,11 +18,12 @@ if (!"DataOverviewR" %in% rownames(installed.packages())) {
 ```{r, load-libraries, message = FALSE, warning = FALSE, echo = FALSE}
 library(dplyr)         # Data manipulation
 library(DataOverviewR) # Data dictionary and summary
+library(data.table)    # Working with large files
 ```
 
-```{r, read-weather-csv, echo = FALSE}
-filepath <- file.path("data", "raw", "weather.csv")
-weather_data <- read.csv(filepath)
+```{r, read-fire-pa, echo = FALSE}
+wildfires_purpleair <- read.csv(file.path("data", "processed", "wildfires_purpleair.csv"))
+wildfires <- fread(file.path("data", "processed", "wildfires.csv"))
 ```
 
 ---
@@ -30,18 +31,18 @@ weather_data <- read.csv(filepath)
 **Data Summary**
 
 ```{r, data-summ, echo = FALSE}
-data_summary(weather_data, data_title = "Weather Summary")
+data_summary(wildfires, data_title = "Wildfire Summary")
 ```
 
 ---
 
 Histograms for numerical columns
 ```{r, hist, echo = FALSE}
-numeric_cols <- names(weather_data)[sapply(weather_data, is.numeric)]
+numeric_cols <- names(wildfires)[sapply(wildfires, is.numeric)]
 numeric_cols <- setdiff(numeric_cols, c("lon", "lat"))
 # Loop through the columns and plot histograms
 for (col in numeric_cols) {
-  x <- weather_data[[col]]
+  x <- wildfires[[col]]
   
   # If max is much larger than the 99th percentile, filter the data for plotting
   p99 <- quantile(x, 0.99, na.rm = TRUE)
@@ -55,11 +56,30 @@ for (col in numeric_cols) {
 Bar Plots for categorical columns
 
 ```{r, bar-plots, echo = FALSE}
-non_numeric_cols <- names(weather_data)[sapply(weather_data, Negate(is.numeric))]
+non_numeric_cols <- names(wildfires)[sapply(wildfires, Negate(is.numeric))]
 non_numeric_cols <- setdiff(non_numeric_cols, c("timestamp"))
 
 for (col in non_numeric_cols) {
   # Plot the histogram using barplot for categorical data
-  barplot(table(weather_data[[col]]), main = paste("Histogram of", col), ylab = "Frequency")
+  barplot(table(wildfires[[col]]), main = paste("Histogram of", col), ylab = "Frequency")
 }
 ```
+
+
+
+
+
+<!-- # FIRE CALCULATION -->
+<!-- ```{r} -->
+<!-- # Create a combined score based on distance and recency -->
+<!-- fire_impact <- purpleair_fires_df %>% -->
+<!--   mutate( -->
+<!--     recency_weight = 1 + max(0, fire_days1 - fire_days2), -->
+<!--     distance_weight = 1 / fire_distance, -->
+<!--     impact_score = recency_weight * distance_weight -->
+<!--   ) %>% -->
+<!--   group_by(sensor_index, sensor_date) %>% -->
+<!--   slice_max(impact_score)  # Keep fire with highest impact score for each sensor and date -->
+
+<!-- ``` -->
+
