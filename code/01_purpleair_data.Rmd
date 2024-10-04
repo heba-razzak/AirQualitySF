@@ -1,0 +1,257 @@
+---
+title: "PurpleAir Data" 
+output: github_document
+knit: (function(input, ...) {rmarkdown::render(input, output_dir = "../docs", )})
+---
+
+```{r, setup, echo=FALSE}
+knitr::opts_chunk$set(fig.path = "../docs/plots/", fig.dim = c(6, 4))
+```
+
+```{r, github-packages, echo=FALSE}
+if (!"purpleAirAPI" %in% rownames(installed.packages())) {
+  suppressMessages({devtools::install_github("heba-razzak/purpleAirAPI")})
+}
+
+if (!"DataOverviewR" %in% rownames(installed.packages())) {
+  suppressMessages({devtools::install_github("heba-razzak/DataOverviewR")})
+}
+```
+
+Load required libraries
+
+```{r, load-libraries, message = FALSE, warning = FALSE}
+library(dplyr)         # Data manipulation
+library(sf)            # Spatial data manipulation
+library(ggplot2)       # Data visualization
+library(kableExtra)    # Printing formatted tables
+library(purpleAirAPI)  # Download PurpleAir Data
+library(leaflet)       # Interactive maps
+library(htmlwidgets)   # Creating HTML widgets
+library(webshot)       # Convert URL to image
+library(DataOverviewR) # Data dictionary and summary
+```
+
+```{r, echo = FALSE}
+# Coordinate Reference System (CRS)
+# CRS 4326: WGS 84 (lat/lon in degrees, global standard for GPS)
+# CRS 3310: NAD83 / California Albers (projected in meters, used for California)
+```
+
+**Download Sensor Data**\
+Fields: sensor_index, date_created, last_seen, latitude, longitude\
+
+PurpleAir Documentation:\
+[Sensor fields](https://api.purpleair.com/#api-sensors-get-sensor-data)\
+[Field Descriptions](https://community.purpleair.com/t/api-history-fields-descriptions/4652)
+
+```{r, download-purpleair-sensors}
+# Download sensor data
+api_key = readr::read_file(file.path("inputs", "purpleair_key.txt"))
+pa <- getPurpleairSensors(
+  apiReadKey = api_key, 
+  fields = c("latitude", "longitude", "date_created", "last_seen", 
+             "location_type")) %>% 
+  na.omit()
+```
+
+Filter sensors to bay area
+
+```{r, pasensors-bayarea, warning = FALSE}
+# Convert the PurpleAir data frame to an sf object
+pa_sf <- st_as_sf(pa, coords=c("longitude", "latitude"), crs = 4326)
+
+# Define bounding box for the Bay Area
+bbox <- c(xmin = -123.8, ymin = 36.9, xmax = -121.0, ymax = 39.0)
+bbox_sf <- st_as_sfc(st_bbox(bbox))
+st_crs(bbox_sf) <- 4326
+
+# Filter sensors within bounding box
+purpleairs_sf <- st_intersection(pa_sf, bbox_sf)
+```
+
+---
+
+**Data Dictionary**
+
+```{r, sensor-data-dict, echo = FALSE}
+desc <- data_description(pa_sf, 
+                         var_desc = c("The sensor's index. Can be used to add a sensor to a group or view its details.",
+                                         "The UNIX time stamp from when the device was created.",
+                                         "The UNIX time stamp of the last time the server received data from the device.",
+                                         "The location type. Possible values are: 0 = Outside or 1 = Inside.",
+                                         "Geometry"))
+data_dictionary(pa_sf, data_title = "PurpleAir Sensors in Bay Area", descriptions = desc, hide = c("top_n", "NA_Percentage", "NA_Count", "n_unique"))
+```
+
+**View data**
+
+```{r, view-pa-sensors, echo = FALSE}
+knitr::kable(head(pa_sf, 3),
+             row.names = FALSE,
+             format = "markdown")
+```
+
+---
+
+Set inputs for PurpleAir data
+
+```{r, inputs-purple-air}
+# https://community.purpleair.com/t/what-is-the-difference-between-cf-1-atm-and-alt/6442
+fields <- c("pm2.5_alt", "pm2.5_alt_a", "pm2.5_alt_b",
+            "pm2.5_atm", "pm2.5_atm_a", "pm2.5_atm_b", 
+            "pm2.5_cf_1", "pm2.5_cf_1_a", "pm2.5_cf_1_b",
+            "rssi", "uptime", "memory", "humidity", "temperature",
+            "pressure", "analog_input")
+average <- "60"
+
+# Date range for data download (2018-2019)
+start_date <- as.Date("2018-01-01")
+end_date <- as.Date("2019-12-31")
+```
+
+Download Purple Air Hourly Data for 2018-2019
+
+```{r, download-data}
+# only download if file doesnt exist
+filename <- paste0("purpleair_", start_date, "_", end_date, ".csv")
+filepath <- file.path("data", "raw", filename)
+
+if (!file.exists(filepath)) {
+  filtered_sensors_sf <- purpleairs_sf %>% 
+    filter(last_seen >= start_date) %>% 
+    filter(date_created <= end_date) %>% 
+    select(sensor_index, location_type) %>%
+    st_drop_geometry()
+  
+  sensor_ids <- unique(filtered_sensors_sf$sensor_index)
+  
+  # Get PurpleAir data
+  purpleair_data <- getSensorHistory(
+    sensorIndex = sensor_ids,
+    apiReadKey = api_key,
+    startDate = start_date,
+    endDate = end_date,
+    average = average,
+    fields = fields
+  )
+  
+  purpleair_data <- left_join(purpleair_data, filtered_sensors_sf, by = "sensor_index")
+  
+  # Save to CSV file
+  write.csv(purpleair_data, file = filepath, row.names = FALSE)
+}
+```
+
+```{r, read-purpleair-csv, echo = FALSE}
+filename <- paste0("purpleair_", start_date, "_", end_date, ".csv")
+filepath <- file.path("data", "raw", filename)
+
+# Read purple air data
+purpleair_data <- read.csv(filepath)
+purpleair_data <- purpleair_data %>% 
+  select(time_stamp, rssi, uptime, memory, humidity, temperature, pressure,
+         analog_input, pm2.5_alt, pm2.5_alt_a, pm2.5_alt_b, sensor_index, location_type)
+```
+
+```{r, write-sensors}
+# Save sensors and locations
+filepath <- file.path("data", "raw", "pa_sensors.csv")
+if (!file.exists(filepath)) {
+  filtered_sensors <- pa %>% filter(sensor_index %in% unique(purpleair_data$sensor_index))
+  write.csv(filtered_sensors, file = filepath, row.names = FALSE)
+}
+```
+
+---
+
+**Data Dictionary**
+
+```{r, data-dict-pa, echo = FALSE}
+desc <- data_description(
+  purpleair_data,
+  var_desc = 
+    c("time_stamp" = "UTC (Unix) time stamp for that row of data.",
+      "rssi" = "The WiFi signal strength.",
+      "uptime" = "The time in minutes since the firmware started as last reported by the sensor.",
+      "memory" = "Free HEAP memory in Kb.",
+      "humidity" = "Relative humidity inside of the sensor housing (%). This matches the 'Raw Humidity' map layer and on average is 4% lower than ambient conditions. Null if not equipped.",
+      "temperature" = "Temperature inside of the sensor housing (F). This matches the 'Raw Temperature' map layer and on average is 8°F higher than ambient conditions. Null if not equipped.",
+      "pressure" = "Current pressure in Millibars.",
+      "analog_input" = "If anything is connected to it, the analog voltage on ADC input of the PurpleAir sensor control board.",
+      "pm2.5_alt" = "Estimated mass concentration PM2.5 (µg/m³). PM2.5 are fine particulates with a diameter of fewer than 2.5 microns. ALT Formula for estimation.",
+      "pm2.5_alt_a" = "Channel A ALT variant",
+      "pm2.5_alt_b" = "Channel B ALT variant",
+      "sensor_index" = "The sensor's index. Can be used to add a sensor to a group or view its details.",
+      "location_type" = "The location type. Possible values are: 0 = Outside or 1 = Inside."
+    ))
+
+data_dictionary(purpleair_data, 
+                data_title = "PurpleAir Bay Area Hourly 2018-2019", 
+                descriptions = desc,
+                hide = c("NA_Count", "NA_Percentage", "N_Unique", "top_n"))
+```
+
+```{r, data-dict-pa2, echo = FALSE}
+data_dictionary(purpleair_data, 
+                data_title = "Missing Values",
+                hide = c("top_n", "Type", "N_Unique"))
+```
+
+
+**View data**
+
+```{r, data-head, echo = FALSE}
+knitr::kable(head(purpleair_data, 3), row.names = FALSE, format = "markdown")
+```
+
+---
+
+```{r, read-sensors-csv, echo = FALSE}
+# Read sensors data
+filepath <- file.path("data", "raw", "pa_sensors.csv")
+pa_sensors <- read.csv(filepath)
+pa_sf <- st_as_sf(pa_sensors, coords=c("longitude", "latitude"), crs = 4326)
+```
+
+Map PurpleAir Sensors Bay Area (2018-2019)
+
+```{r, map-sensors}
+img_path <- file.path("../docs", "plots", "pa-sensors-map.png")
+if (!file.exists(img_path)) {
+  map_path <- file.path("../docs", "maps", "pa-sensors-map.html")
+  m <- leaflet() %>%
+  addCircleMarkers(data = pa_sf, popup = ~as.character(sensor_index), label = ~as.character(sensor_index),
+                   fillColor = "#AA44AA", fillOpacity = 0.5, weight = 0, radius = 5) %>%
+  addProviderTiles("CartoDB")
+  saveWidget(m, file = map_path)
+  webshot(map_path, file = img_path)
+}
+
+knitr::include_graphics(img_path)
+```
+
+```{r, channel-a-b}
+img_path <- file.path("../docs", "plots", "channel-a-vs-b.png")
+
+if (!file.exists(img_path)) {
+  # Replace NA with -1 for plotting
+  purpleair_data$pm2.5_alt_a[is.na(purpleair_data$pm2.5_alt_a)] <- -1
+  purpleair_data$pm2.5_alt_b[is.na(purpleair_data$pm2.5_alt_b)] <- -1
+  
+  # Plot valid points first (black)
+  p <- ggplot(purpleair_data, aes(x = pm2.5_alt_a, y = pm2.5_alt_b)) +
+    geom_point(data = subset(purpleair_data, pm2.5_alt_a != -1 & pm2.5_alt_b != -1), 
+               color = "black", alpha = 0.5) +
+    # Plot missing points on top (red)
+    geom_point(data = subset(purpleair_data, pm2.5_alt_a == -1 | pm2.5_alt_b == -1), 
+               color = "red", alpha = 0.5) +
+    labs(x = "Channel A PM2.5 (µg/m³)", y = "Channel B PM2.5 (µg/m³)", title = "PM2.5 Channel A vs B") +
+    theme_minimal()
+  
+  ggsave(filename = img_path, plot = p, width = 6, height = 4)
+}
+
+knitr::include_graphics(img_path)
+```
+

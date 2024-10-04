@@ -1,0 +1,185 @@
+---
+title: "Wildland Fire Perimeters Data"
+output: github_document
+knit: (function(input, ...) {rmarkdown::render(input, output_dir = "../docs", )})
+---
+
+### California Department of Forestry and Fire Protection
+
+[Data Source](https://www.fire.ca.gov/what-we-do/fire-resource-assessment-program/fire-perimeters)
+
+```{r, setup, include=FALSE}
+knitr::opts_chunk$set(fig.path = "../docs/plots/")
+```
+
+```{r, github-package, include=FALSE}
+if (!"DataOverviewR" %in% rownames(installed.packages())) {
+  suppressMessages({devtools::install_github("heba-razzak/DataOverviewR")})
+}
+```
+
+Load required libraries
+
+```{r, load-libraries, message = FALSE, warning = FALSE}
+library(dplyr)         # Data manipulation
+library(sf)            # Spatial data manipulation
+library(leaflet)       # Interactive maps
+library(htmlwidgets)   # Creating HTML widgets
+library(webshot)       # Convert URL to image
+library(DataOverviewR) # Data dictionary and summary
+library(units)         # Handling unit objects
+library(geosphere)     # Geographic calculations
+```
+
+
+```{r, read-fire, echo = FALSE}
+fire <- st_read(file.path(
+  "data", "raw", "CaliforniaFirePerimeters", "California_Fire_Perimeters_(all).shp"), quiet = TRUE)
+```
+
+---
+
+**Data Dictionary**
+
+```{r, data-dict, echo = FALSE}
+desc <- data_description(
+  fire,
+  var_desc = 
+    c("YEAR_" = "Year in which the fire started", 
+      "STATE" = "State in which the fire started", 
+      "AGENCY" = "Direct protection agency responding to fire", 
+      "UNIT_ID" = "ICS code for unit responding to fire", 
+      "FIRE_NAME" = "Name of the fire", 
+      "INC_NUM" = "Number assigned by the Emergency Command Center of the responsible agency for the fire", 
+      "ALARM_DATE" = "DD/MM/YYYY format, date of fire discovery", 
+      "CONT_DATE" = "DD/MM/YYYY format, Containment date for the fire", 
+      "CAUSE" = "Reason fire ignited", 
+      "C_METHOD" = "Method used to collect perimeter data", 
+      "OBJECTIVE" = "Tactic for fire response", 
+      "GIS_ACRES" = "GIS calculated area, in acres", 
+      "COMMENTS" = "Miscellaneous comments", 
+      "COMPLEX_NA" = "If part of complex, the complex name", 
+      "IRWINID" = "IRWIN stands for Integrated Reporting of Wildland Fire Information, a global unique identifier assigned at the onset of an incident.", 
+      "FIRE_NUM" = "Historical numbering system preceding incident numbers", 
+      "COMPLEX_ID" = "If part of complex, the complex IRWIN ID, however, transitions from incident number previous to 2023 in future update.", 
+      "DECADES" = "Decade in which the fire started", 
+      "geometry" = "Geospatial data"))
+
+data_dictionary(fire, 
+                data_title = "Wildland Fire Perimeters", 
+                descriptions = desc,
+                hide = c("NA_Count", "NA_Percentage", "N_Unique", "top_n"))
+```
+
+```{r, data-dict2, echo = FALSE}
+data_dictionary(fire, 
+                data_title = "Missing Values",
+                hide = c("top_n", "Type"))
+```
+
+**View data**
+
+```{r, data-head, echo = FALSE}
+knitr::kable(head(fire, 3), row.names = FALSE, format = "markdown")
+```
+
+---
+
+```{r, read-sensors-csv, echo = FALSE}
+# Read sensors data
+filepath <- file.path("data", "raw", "pa_sensors.csv")
+pa_sensors <- read.csv(filepath)
+pa_sf <- st_as_sf(pa_sensors, coords=c("longitude", "latitude"), crs = 4326)
+```
+
+Link Wildfires and PurpleAir sensors by distance and direction
+
+```{r, calc-dist-dir}
+filepath <- file.path("data", "processed", "wildfires_purpleair.csv")
+if (!file.exists(filepath)) {
+  # Add Unique Fire ID
+  fire_data <- fire %>%
+    mutate(fire_id = row_number())
+  fwrite(fire_data %>% st_drop_geometry(), file.path("data", "processed", "wildfires.csv"))
+  
+  # Filter for California, 2018, 2019 (& 5 days before 2018) 
+  fire_sf <- fire_data %>%
+    filter(YEAR_ %in% c(2017, 2018, 2019), STATE == "CA") %>% 
+    select(fire_id)
+  
+  # Get distances between purpleAir sensors and fires (within 100km)
+  pa_sf <- st_transform(pa_sf, crs = 3310)
+  fire_sf <- st_transform(fire_sf, crs = 3310)
+  pa_fire_distances <- st_distance(pa_sf, fire_sf, by_element = FALSE)
+  distances_df <- as.data.frame(as.table(pa_fire_distances))
+  colnames(distances_df) <- c("sensor_pos", "fire_pos", "fire_distance")
+  pa_fire_dist <- distances_df %>%
+    mutate(
+      sensor_index = pa_sf$sensor_index[sensor_pos],
+      fire_id = fire_sf$fire_id[fire_pos]
+    ) %>%
+    select(sensor_index, fire_id, fire_distance) %>%
+    mutate(fire_distance = drop_units(fire_distance)) %>% 
+    filter(fire_distance <= 100000)
+  
+  # Get direction (bearing) between PurpleAir sensors and fires
+  fire_coords <- st_make_valid(fire_sf) %>%  st_transform(crs = 4326) %>% 
+    st_centroid() %>% st_coordinates() %>%  as.data.frame() %>% 
+    mutate(fire_id = fire_sf$fire_id) %>% select(fire_id, X, Y) %>%
+    rename(fire_x = X, fire_y = Y)
+  
+  sensor_coords <- st_transform(pa_sf, crs = 4326) %>% 
+    st_coordinates() %>% as.data.frame() %>% 
+    mutate(sensor_index = pa_sf$sensor_index) %>%
+    rename(sensor_x = X, sensor_y = Y)
+  
+  pa_fire_dist <- pa_fire_dist %>%
+    left_join(fire_coords, by = "fire_id") %>%
+    left_join(sensor_coords, by = "sensor_index")
+  
+  wildfires_purpleair <- pa_fire_dist %>%
+    mutate(fire_bearing = bearing(cbind(sensor_x, sensor_y), cbind(fire_x, fire_y)),
+           fire_direction = round((fire_bearing + 360) %% 360)) %>%
+    select(sensor_index, fire_id, fire_distance, fire_direction)
+  
+  fwrite(wildfires_purpleair, filepath)
+}
+```
+
+```{r, read-fire-pa, echo = FALSE}
+filepath <- file.path("data", "processed", "wildfires_purpleair.csv")
+wildfires_purpleair <- read.csv(filepath)
+```
+
+---
+
+**Data Dictionary**
+
+```{r, dist-dict, echo = FALSE}
+desc <- data_description(
+  wildfires_purpleair,
+  var_desc = 
+    c("sensor_index" = "PurpleAir Sensor Index", 
+      "fire_id" = "Fire Unique Identifier", 
+      "fire_distance" = "Distance between fire and PurpleAir (in m)", 
+      "fire_direction" = "Bearing (Direction) between fire and PurpleAir (in degrees)"))
+
+data_dictionary(wildfires_purpleair, 
+                data_title = "Wildland Fires, Spatial Calculations (California, 2018-2019)", 
+                descriptions = desc,
+                hide = c("NA_Count", "NA_Percentage", "N_Unique", "top_n"))
+```
+
+```{r, dist-dict2, echo = FALSE}
+data_dictionary(wildfires_purpleair, 
+                data_title = "Missing Values",
+                hide = c("top_n", "Type"))
+```
+
+**View data**
+
+```{r, dist-head, echo = FALSE}
+knitr::kable(head(wildfires_purpleair, 3), row.names = FALSE, format = "markdown")
+```
+
+---

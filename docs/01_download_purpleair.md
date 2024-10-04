@@ -7,12 +7,12 @@ Load required libraries
 library(dplyr)         # Data manipulation
 library(sf)            # Spatial data manipulation
 library(ggplot2)       # Data visualization
-library(lubridate)     # Working with dates
-library(tigris)        # Counties map data
 library(kableExtra)    # Printing formatted tables
 library(purpleAirAPI)  # Download PurpleAir Data
-library(DataOverviewR) # Data dictionary and summary
 library(leaflet)       # Interactive maps
+library(htmlwidgets)   # Creating HTML widgets
+library(webshot)       # Convert URL to image
+library(DataOverviewR) # Data dictionary and summary
 ```
 
 **Download Sensor Data**  
@@ -38,12 +38,12 @@ Filter sensors to bay area
 
 ``` r
 # Convert the PurpleAir data frame to an sf object
-pa_sf <- st_as_sf(pa, coords=c("longitude", "latitude"), crs = crs)
+pa_sf <- st_as_sf(pa, coords=c("longitude", "latitude"), crs = 4326)
 
 # Define bounding box for the Bay Area
 bbox <- c(xmin = -123.8, ymin = 36.9, xmax = -121.0, ymax = 39.0)
 bbox_sf <- st_as_sfc(st_bbox(bbox))
-st_crs(bbox_sf) <- crs
+st_crs(bbox_sf) <- 4326
 
 # Filter sensors within bounding box
 purpleairs_sf <- st_intersection(pa_sf, bbox_sf)
@@ -55,7 +55,7 @@ purpleairs_sf <- st_intersection(pa_sf, bbox_sf)
 
 #### PurpleAir Sensors in Bay Area
 
-`26,976` rows
+`26,974` rows
 
 `0` rows with missing values
 
@@ -71,9 +71,9 @@ purpleairs_sf <- st_intersection(pa_sf, bbox_sf)
 
 | sensor_index | date_created | last_seen  | location_type | geometry                   |
 |-------------:|:-------------|:-----------|--------------:|:---------------------------|
-|           53 | 2016-02-04   | 2024-10-01 |             0 | POINT (-111.7048 40.24674) |
-|           77 | 2016-03-02   | 2024-10-01 |             0 | POINT (-111.8253 40.75082) |
-|          182 | 2016-08-01   | 2024-10-01 |             0 | POINT (-123.7423 49.16008) |
+|           53 | 2016-02-04   | 2024-10-02 |             0 | POINT (-111.7048 40.24674) |
+|           77 | 2016-03-02   | 2024-10-02 |             0 | POINT (-111.8253 40.75082) |
+|          182 | 2016-08-01   | 2024-10-02 |             0 | POINT (-123.7423 49.16008) |
 
 ------------------------------------------------------------------------
 
@@ -196,15 +196,21 @@ if (!file.exists(filepath)) {
 Map PurpleAir Sensors Bay Area (2018-2019)
 
 ``` r
-# Create a leaflet map showing the sensors
-leaflet() %>%
-  addCircleMarkers(data = pa_sf, popup = ~sensor_index,
-                   fillColor = "purple", fillOpacity = 1,
-                   color = "purple", weight = 2, opacity = 1, radius = 1) %>%
+img_path <- file.path("../docs", "plots", "pa-sensors-map.png")
+if (!file.exists(img_path)) {
+  map_path <- file.path("../docs", "maps", "pa-sensors-map.html")
+  m <- leaflet() %>%
+  addCircleMarkers(data = pa_sf, popup = ~as.character(sensor_index), label = ~as.character(sensor_index),
+                   fillColor = "#AA44AA", fillOpacity = 0.5, weight = 0, radius = 5) %>%
   addProviderTiles("CartoDB")
+  saveWidget(m, file = map_path)
+  webshot(map_path, file = img_path)
+}
+
+knitr::include_graphics(img_path)
 ```
 
-![](../docs/plots/map-sensors-1.png)<!-- -->
+<img src="../docs/plots/pa-sensors-map.png" width="992" />
 
 ``` r
 img_path <- file.path("../docs", "plots", "channel-a-vs-b.png")

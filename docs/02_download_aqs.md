@@ -8,9 +8,8 @@ library(dplyr)         # Data manipulation
 library(sf)            # Spatial data manipulation
 library(RAQSAPI)       # EPA Air Quality API
 library(leaflet)       # Interactive maps
-library(ggplot2)       # Data visualization
-library(lubridate)     # Working with dates
-library(tidyr)         # Tidy messy data
+library(htmlwidgets)   # Creating HTML widgets
+library(webshot)       # Convert URL to image
 library(DataOverviewR) # Data dictionary and summary
 ```
 
@@ -57,15 +56,20 @@ monitors_sf <- monitor_info %>%
 Map of AQS Monitors in Bay Area
 
 ``` r
-# Create a leaflet map showing the monitors
-leaflet() %>%
-  addCircleMarkers(data = monitors_sf, popup = ~si_id,
-                   fillColor = "blue", fillOpacity = 1,
-                   color = "blue", weight = 2, opacity = 1, radius = 2) %>%
+img_path <- file.path("../docs", "plots", "aqs-map.png")
+if (!file.exists(img_path)) {
+  map_path <- file.path("../docs", "maps", "aqs-map.html")
+  m <- leaflet() %>%
+  addCircleMarkers(data = monitors_sf, popup = ~as.character(si_id), label = ~as.character(si_id),
+                   fillColor = "#275C9D", fillOpacity = 0.5, weight = 0, radius = 5) %>%
   addProviderTiles("CartoDB")
+  saveWidget(m, file = map_path)
+  webshot(map_path, file = img_path)
+}
+knitr::include_graphics(img_path)
 ```
 
-![](../docs/plots/map-aqs-1.png)<!-- -->
+<img src="../docs/plots/aqs-map.png" width="992" />
 
 **Download AQS Hourly Data in Bay Area**
 
@@ -107,191 +111,6 @@ if (!file.exists(filepath)) { # (skip if full file exists)
   }
 }
 ```
-
-    ## Waiting 2s to retry ■■■■■■■■■■■■■■■ Waiting 2s to retry
-    ## ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ Waiting 6s to retry ■■■■■■ Waiting 6s to retry
-    ## ■■■■■■ Waiting 6s to retry ■■■■■■■ Waiting 6s to retry ■■■■■■■■ Waiting 6s to
-    ## retry ■■■■■■■■■■ Waiting 6s to retry ■■■■■■■■■■ Waiting 6s to retry ■■■■■■■■■■■
-    ## Waiting 6s to retry ■■■■■■■■■■■■ Waiting 6s to retry ■■■■■■■■■■■■■■ Waiting 6s
-    ## to retry ■■■■■■■■■■■■■■■ Waiting 6s to retry ■■■■■■■■■■■■■■■■ Waiting 6s to
-    ## retry ■■■■■■■■■■■■■■■■■ Waiting 6s to retry ■■■■■■■■■■■■■■■■■ Waiting 6s to
-    ## retry ■■■■■■■■■■■■■■■■■■ Waiting 6s to retry ■■■■■■■■■■■■■■■■■■■■ Waiting 6s to
-    ## retry ■■■■■■■■■■■■■■■■■■■■■ Waiting 6s to retry ■■■■■■■■■■■■■■■■■■■■■■ Waiting
-    ## 6s to retry ■■■■■■■■■■■■■■■■■■■■■■■ Waiting 6s to retry
-    ## ■■■■■■■■■■■■■■■■■■■■■■■■ Waiting 6s to retry ■■■■■■■■■■■■■■■■■■■■■■■■■ Waiting
-    ## 6s to retry ■■■■■■■■■■■■■■■■■■■■■■■■■■ Waiting 6s to retry
-    ## ■■■■■■■■■■■■■■■■■■■■■■■■■■■ Waiting 6s to retry ■■■■■■■■■■■■■■■■■■■■■■■■■■■■
-    ## Waiting 6s to retry ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ Waiting 6s to retry
-    ## ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ Waiting 2s to retry ■■■■■■■■■■■■■■■ Waiting 2s
-    ## to retry ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ Waiting 6s to retry ■■■■■■ Waiting 6s
-    ## to retry ■■■■■■■ Waiting 6s to retry ■■■■■■■ Waiting 6s to retry ■■■■■■■■
-    ## Waiting 6s to retry ■■■■■■■■■■ Waiting 6s to retry ■■■■■■■■■■■ Waiting 6s to
-    ## retry ■■■■■■■■■■■■ Waiting 6s to retry ■■■■■■■■■■■■■ Waiting 6s to retry
-    ## ■■■■■■■■■■■■■■ Waiting 6s to retry ■■■■■■■■■■■■■■■ Waiting 6s to retry
-    ## ■■■■■■■■■■■■■■■■ Waiting 6s to retry ■■■■■■■■■■■■■■■■■ Waiting 6s to retry
-    ## ■■■■■■■■■■■■■■■■■■ Waiting 6s to retry ■■■■■■■■■■■■■■■■■■■ Waiting 6s to retry
-    ## ■■■■■■■■■■■■■■■■■■■■ Waiting 6s to retry ■■■■■■■■■■■■■■■■■■■■■ Waiting 6s to
-    ## retry ■■■■■■■■■■■■■■■■■■■■■■ Waiting 6s to retry ■■■■■■■■■■■■■■■■■■■■■■■
-    ## Waiting 6s to retry ■■■■■■■■■■■■■■■■■■■■■■■■ Waiting 6s to retry
-    ## ■■■■■■■■■■■■■■■■■■■■■■■■■ Waiting 6s to retry ■■■■■■■■■■■■■■■■■■■■■■■■■■
-    ## Waiting 6s to retry ■■■■■■■■■■■■■■■■■■■■■■■■■■■ Waiting 6s to retry
-    ## ■■■■■■■■■■■■■■■■■■■■■■■■■■■■ Waiting 6s to retry ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
-    ## Waiting 6s to retry ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ Waiting 6s to retry ■■■■■■
-    ## Waiting 6s to retry ■■■■■■ Waiting 6s to retry ■■■■■■■ Waiting 6s to retry
-    ## ■■■■■■■■ Waiting 6s to retry ■■■■■■■■■ Waiting 6s to retry ■■■■■■■■■■ Waiting
-    ## 6s to retry ■■■■■■■■■■■ Waiting 6s to retry ■■■■■■■■■■■■ Waiting 6s to retry
-    ## ■■■■■■■■■■■■■ Waiting 6s to retry ■■■■■■■■■■■■■■ Waiting 6s to retry
-    ## ■■■■■■■■■■■■■■■ Waiting 6s to retry ■■■■■■■■■■■■■■■■ Waiting 6s to retry
-    ## ■■■■■■■■■■■■■■■■■ Waiting 6s to retry ■■■■■■■■■■■■■■■■■■ Waiting 6s to retry
-    ## ■■■■■■■■■■■■■■■■■■■ Waiting 6s to retry ■■■■■■■■■■■■■■■■■■■■ Waiting 6s to
-    ## retry ■■■■■■■■■■■■■■■■■■■■■ Waiting 6s to retry ■■■■■■■■■■■■■■■■■■■■■■ Waiting
-    ## 6s to retry ■■■■■■■■■■■■■■■■■■■■■■■ Waiting 6s to retry
-    ## ■■■■■■■■■■■■■■■■■■■■■■■■ Waiting 6s to retry ■■■■■■■■■■■■■■■■■■■■■■■■■ Waiting
-    ## 6s to retry ■■■■■■■■■■■■■■■■■■■■■■■■■■ Waiting 6s to retry
-    ## ■■■■■■■■■■■■■■■■■■■■■■■■■■■ Waiting 6s to retry ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
-    ## Waiting 6s to retry ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ Waiting 6s to retry
-    ## ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ Waiting 5s to retry ■■■■■■■ Waiting 5s to retry
-    ## ■■■■■■■ Waiting 5s to retry ■■■■■■■■■ Waiting 5s to retry ■■■■■■■■■■ Waiting 5s
-    ## to retry ■■■■■■■■■■■ Waiting 5s to retry ■■■■■■■■■■■■ Waiting 5s to retry
-    ## ■■■■■■■■■■■■■■ Waiting 5s to retry ■■■■■■■■■■■■■■■ Waiting 5s to retry
-    ## ■■■■■■■■■■■■■■■■ Waiting 5s to retry ■■■■■■■■■■■■■■■■■ Waiting 5s to retry
-    ## ■■■■■■■■■■■■■■■■■■ Waiting 5s to retry ■■■■■■■■■■■■■■■■■■■■ Waiting 5s to retry
-    ## ■■■■■■■■■■■■■■■■■■■■■ Waiting 5s to retry ■■■■■■■■■■■■■■■■■■■■■■ Waiting 5s to
-    ## retry ■■■■■■■■■■■■■■■■■■■■■■■■ Waiting 5s to retry ■■■■■■■■■■■■■■■■■■■■■■■■■
-    ## Waiting 5s to retry ■■■■■■■■■■■■■■■■■■■■■■■■■■ Waiting 5s to retry
-    ## ■■■■■■■■■■■■■■■■■■■■■■■■■■■ Waiting 5s to retry ■■■■■■■■■■■■■■■■■■■■■■■■■■■■
-    ## Waiting 5s to retry ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ Waiting 5s to retry
-    ## ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ Waiting 6s to retry ■■■■■■ Waiting 6s to retry
-    ## ■■■■■■■ Waiting 6s to retry ■■■■■■■■ Waiting 6s to retry ■■■■■■■■ Waiting 6s to
-    ## retry ■■■■■■■■■■ Waiting 6s to retry ■■■■■■■■■■■ Waiting 6s to retry
-    ## ■■■■■■■■■■■■ Waiting 6s to retry ■■■■■■■■■■■■■ Waiting 6s to retry
-    ## ■■■■■■■■■■■■■■ Waiting 6s to retry ■■■■■■■■■■■■■■■ Waiting 6s to retry
-    ## ■■■■■■■■■■■■■■■■ Waiting 6s to retry ■■■■■■■■■■■■■■■■■ Waiting 6s to retry
-    ## ■■■■■■■■■■■■■■■■■■ Waiting 6s to retry ■■■■■■■■■■■■■■■■■■■ Waiting 6s to retry
-    ## ■■■■■■■■■■■■■■■■■■■■ Waiting 6s to retry ■■■■■■■■■■■■■■■■■■■■■ Waiting 6s to
-    ## retry ■■■■■■■■■■■■■■■■■■■■■■ Waiting 6s to retry ■■■■■■■■■■■■■■■■■■■■■■■
-    ## Waiting 6s to retry ■■■■■■■■■■■■■■■■■■■■■■■■ Waiting 6s to retry
-    ## ■■■■■■■■■■■■■■■■■■■■■■■■■ Waiting 6s to retry ■■■■■■■■■■■■■■■■■■■■■■■■■■
-    ## Waiting 6s to retry ■■■■■■■■■■■■■■■■■■■■■■■■■■■ Waiting 6s to retry
-    ## ■■■■■■■■■■■■■■■■■■■■■■■■■■■■ Waiting 6s to retry ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
-    ## Waiting 6s to retry ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ Waiting 3s to retry
-    ## ■■■■■■■■■■ Waiting 3s to retry ■■■■■■■■■■■■■ Waiting 3s to retry
-    ## ■■■■■■■■■■■■■■■ Waiting 3s to retry ■■■■■■■■■■■■■■■■■■■■ Waiting 3s to retry
-    ## ■■■■■■■■■■■■■■■■■■■■■ Waiting 3s to retry ■■■■■■■■■■■■■■■■■■■■■■■ Waiting 3s to
-    ## retry ■■■■■■■■■■■■■■■■■■■■■■■■■ Waiting 3s to retry ■■■■■■■■■■■■■■■■■■■■■■■■■■■
-    ## Waiting 3s to retry ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ Waiting 6s to retry ■■■■■■
-    ## Waiting 6s to retry ■■■■■■ Waiting 6s to retry ■■■■■■■ Waiting 6s to retry
-    ## ■■■■■■■■ Waiting 6s to retry ■■■■■■■■■ Waiting 6s to retry ■■■■■■■■■■■ Waiting
-    ## 6s to retry ■■■■■■■■■■■ Waiting 6s to retry ■■■■■■■■■■■■ Waiting 6s to retry
-    ## ■■■■■■■■■■■■■ Waiting 6s to retry ■■■■■■■■■■■■■■ Waiting 6s to retry
-    ## ■■■■■■■■■■■■■■■■ Waiting 6s to retry ■■■■■■■■■■■■■■■■■ Waiting 6s to retry
-    ## ■■■■■■■■■■■■■■■■■■ Waiting 6s to retry ■■■■■■■■■■■■■■■■■■ Waiting 6s to retry
-    ## ■■■■■■■■■■■■■■■■■■■ Waiting 6s to retry ■■■■■■■■■■■■■■■■■■■■ Waiting 6s to
-    ## retry ■■■■■■■■■■■■■■■■■■■■■ Waiting 6s to retry ■■■■■■■■■■■■■■■■■■■■■■■ Waiting
-    ## 6s to retry ■■■■■■■■■■■■■■■■■■■■■■■■ Waiting 6s to retry
-    ## ■■■■■■■■■■■■■■■■■■■■■■■■■ Waiting 6s to retry ■■■■■■■■■■■■■■■■■■■■■■■■■■
-    ## Waiting 6s to retry ■■■■■■■■■■■■■■■■■■■■■■■■■■■ Waiting 6s to retry
-    ## ■■■■■■■■■■■■■■■■■■■■■■■■■■■ Waiting 6s to retry ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
-    ## Waiting 6s to retry ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ Waiting 6s to retry
-    ## ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ Waiting 6s to retry ■■■■■■ Waiting 6s to retry
-    ## ■■■■■■ Waiting 6s to retry ■■■■■■■ Waiting 6s to retry ■■■■■■■■ Waiting 6s to
-    ## retry ■■■■■■■■■ Waiting 6s to retry ■■■■■■■■■■ Waiting 6s to retry ■■■■■■■■■■■
-    ## Waiting 6s to retry ■■■■■■■■■■■■ Waiting 6s to retry ■■■■■■■■■■■■■ Waiting 6s
-    ## to retry ■■■■■■■■■■■■■■ Waiting 6s to retry ■■■■■■■■■■■■■■■ Waiting 6s to retry
-    ## ■■■■■■■■■■■■■■■■ Waiting 6s to retry ■■■■■■■■■■■■■■■■■ Waiting 6s to retry
-    ## ■■■■■■■■■■■■■■■■■■ Waiting 6s to retry ■■■■■■■■■■■■■■■■■■■ Waiting 6s to retry
-    ## ■■■■■■■■■■■■■■■■■■■■ Waiting 6s to retry ■■■■■■■■■■■■■■■■■■■■■■ Waiting 6s to
-    ## retry ■■■■■■■■■■■■■■■■■■■■■■■ Waiting 6s to retry ■■■■■■■■■■■■■■■■■■■■■■■
-    ## Waiting 6s to retry ■■■■■■■■■■■■■■■■■■■■■■■■ Waiting 6s to retry
-    ## ■■■■■■■■■■■■■■■■■■■■■■■■■ Waiting 6s to retry ■■■■■■■■■■■■■■■■■■■■■■■■■■
-    ## Waiting 6s to retry ■■■■■■■■■■■■■■■■■■■■■■■■■■■ Waiting 6s to retry
-    ## ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ Waiting 6s to retry
-    ## ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ Waiting 6s to retry
-    ## ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ Waiting 6s to retry ■■■■■■ Waiting 6s to retry
-    ## ■■■■■■■ Waiting 6s to retry ■■■■■■■■ Waiting 6s to retry ■■■■■■■■■ Waiting 6s
-    ## to retry ■■■■■■■■■■ Waiting 6s to retry ■■■■■■■■■■■ Waiting 6s to retry
-    ## ■■■■■■■■■■■■ Waiting 6s to retry ■■■■■■■■■■■■■ Waiting 6s to retry
-    ## ■■■■■■■■■■■■■■ Waiting 6s to retry ■■■■■■■■■■■■■■■ Waiting 6s to retry
-    ## ■■■■■■■■■■■■■■■■ Waiting 6s to retry ■■■■■■■■■■■■■■■■■ Waiting 6s to retry
-    ## ■■■■■■■■■■■■■■■■■■ Waiting 6s to retry ■■■■■■■■■■■■■■■■■■■ Waiting 6s to retry
-    ## ■■■■■■■■■■■■■■■■■■■■ Waiting 6s to retry ■■■■■■■■■■■■■■■■■■■■■ Waiting 6s to
-    ## retry ■■■■■■■■■■■■■■■■■■■■■■ Waiting 6s to retry ■■■■■■■■■■■■■■■■■■■■■■■
-    ## Waiting 6s to retry ■■■■■■■■■■■■■■■■■■■■■■■■ Waiting 6s to retry
-    ## ■■■■■■■■■■■■■■■■■■■■■■■■■ Waiting 6s to retry ■■■■■■■■■■■■■■■■■■■■■■■■■■
-    ## Waiting 6s to retry ■■■■■■■■■■■■■■■■■■■■■■■■■■■ Waiting 6s to retry
-    ## ■■■■■■■■■■■■■■■■■■■■■■■■■■■■ Waiting 6s to retry ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
-    ## Waiting 6s to retry ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ Waiting 5s to retry ■■■■■■■
-    ## Waiting 5s to retry ■■■■■■■■ Waiting 5s to retry ■■■■■■■■■ Waiting 5s to retry
-    ## ■■■■■■■■■■ Waiting 5s to retry ■■■■■■■■■■■ Waiting 5s to retry ■■■■■■■■■■■■■
-    ## Waiting 5s to retry ■■■■■■■■■■■■■■ Waiting 5s to retry ■■■■■■■■■■■■■■■ Waiting
-    ## 5s to retry ■■■■■■■■■■■■■■■■ Waiting 5s to retry ■■■■■■■■■■■■■■■■■■ Waiting 5s
-    ## to retry ■■■■■■■■■■■■■■■■■■■ Waiting 5s to retry ■■■■■■■■■■■■■■■■■■■■ Waiting
-    ## 5s to retry ■■■■■■■■■■■■■■■■■■■■■ Waiting 5s to retry ■■■■■■■■■■■■■■■■■■■■■■
-    ## Waiting 5s to retry ■■■■■■■■■■■■■■■■■■■■■■■■ Waiting 5s to retry
-    ## ■■■■■■■■■■■■■■■■■■■■■■■■■ Waiting 5s to retry ■■■■■■■■■■■■■■■■■■■■■■■■■■
-    ## Waiting 5s to retry ■■■■■■■■■■■■■■■■■■■■■■■■■■■ Waiting 5s to retry
-    ## ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ Waiting 5s to retry
-    ## ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ Waiting 3s to retry ■■■■■■■■■■ Waiting 3s to
-    ## retry ■■■■■■■■■■■■■ Waiting 3s to retry ■■■■■■■■■■■■■■■ Waiting 3s to retry
-    ## ■■■■■■■■■■■■■■■■■■■■ Waiting 3s to retry ■■■■■■■■■■■■■■■■■■■■■■ Waiting 3s to
-    ## retry ■■■■■■■■■■■■■■■■■■■■■■■■ Waiting 3s to retry ■■■■■■■■■■■■■■■■■■■■■■■■■■
-    ## Waiting 3s to retry ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ Waiting 6s to retry ■■■■■■
-    ## Waiting 6s to retry ■■■■■■ Waiting 6s to retry ■■■■■■■ Waiting 6s to retry
-    ## ■■■■■■■■ Waiting 6s to retry ■■■■■■■■■ Waiting 6s to retry ■■■■■■■■■■■ Waiting
-    ## 6s to retry ■■■■■■■■■■■■ Waiting 6s to retry ■■■■■■■■■■■■■ Waiting 6s to retry
-    ## ■■■■■■■■■■■■■■ Waiting 6s to retry ■■■■■■■■■■■■■■ Waiting 6s to retry
-    ## ■■■■■■■■■■■■■■■ Waiting 6s to retry ■■■■■■■■■■■■■■■■ Waiting 6s to retry
-    ## ■■■■■■■■■■■■■■■■■■ Waiting 6s to retry ■■■■■■■■■■■■■■■■■■■ Waiting 6s to retry
-    ## ■■■■■■■■■■■■■■■■■■■■ Waiting 6s to retry ■■■■■■■■■■■■■■■■■■■■■ Waiting 6s to
-    ## retry ■■■■■■■■■■■■■■■■■■■■■■ Waiting 6s to retry ■■■■■■■■■■■■■■■■■■■■■■■
-    ## Waiting 6s to retry ■■■■■■■■■■■■■■■■■■■■■■■■ Waiting 6s to retry
-    ## ■■■■■■■■■■■■■■■■■■■■■■■■■ Waiting 6s to retry ■■■■■■■■■■■■■■■■■■■■■■■■■■
-    ## Waiting 6s to retry ■■■■■■■■■■■■■■■■■■■■■■■■■■■ Waiting 6s to retry
-    ## ■■■■■■■■■■■■■■■■■■■■■■■■■■■■ Waiting 6s to retry ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
-    ## Waiting 6s to retry ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ Waiting 2s to retry
-    ## ■■■■■■■■■■■■■■■ Waiting 2s to retry ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ Waiting 4s
-    ## to retry ■■■■■■■■ Waiting 4s to retry ■■■■■■■■■ Waiting 4s to retry ■■■■■■■■■■
-    ## Waiting 4s to retry ■■■■■■■■■■■■ Waiting 4s to retry ■■■■■■■■■■■■■■ Waiting 4s
-    ## to retry ■■■■■■■■■■■■■■■ Waiting 4s to retry ■■■■■■■■■■■■■■■■■ Waiting 4s to
-    ## retry ■■■■■■■■■■■■■■■■■■ Waiting 4s to retry ■■■■■■■■■■■■■■■■■■■ Waiting 4s to
-    ## retry ■■■■■■■■■■■■■■■■■■■■■ Waiting 4s to retry ■■■■■■■■■■■■■■■■■■■■■■ Waiting
-    ## 4s to retry ■■■■■■■■■■■■■■■■■■■■■■■■ Waiting 4s to retry
-    ## ■■■■■■■■■■■■■■■■■■■■■■■■■■ Waiting 4s to retry ■■■■■■■■■■■■■■■■■■■■■■■■■■■
-    ## Waiting 4s to retry ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ Waiting 4s to retry
-    ## ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ Waiting 5s to retry ■■■■■■■ Waiting 5s to retry
-    ## ■■■■■■■ Waiting 5s to retry ■■■■■■■■ Waiting 5s to retry ■■■■■■■■■ Waiting 5s
-    ## to retry ■■■■■■■■■■■ Waiting 5s to retry ■■■■■■■■■■■■ Waiting 5s to retry
-    ## ■■■■■■■■■■■■■ Waiting 5s to retry ■■■■■■■■■■■■■■ Waiting 5s to retry
-    ## ■■■■■■■■■■■■■■■■ Waiting 5s to retry ■■■■■■■■■■■■■■■■■ Waiting 5s to retry
-    ## ■■■■■■■■■■■■■■■■■■ Waiting 5s to retry ■■■■■■■■■■■■■■■■■■■■ Waiting 5s to retry
-    ## ■■■■■■■■■■■■■■■■■■■■■ Waiting 5s to retry ■■■■■■■■■■■■■■■■■■■■■ Waiting 5s to
-    ## retry ■■■■■■■■■■■■■■■■■■■■■■■ Waiting 5s to retry ■■■■■■■■■■■■■■■■■■■■■■■■
-    ## Waiting 5s to retry ■■■■■■■■■■■■■■■■■■■■■■■■■ Waiting 5s to retry
-    ## ■■■■■■■■■■■■■■■■■■■■■■■■■■■ Waiting 5s to retry ■■■■■■■■■■■■■■■■■■■■■■■■■■■■
-    ## Waiting 5s to retry ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ Waiting 5s to retry
-    ## ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ Waiting 6s to retry ■■■■■■ Waiting 6s to retry
-    ## ■■■■■■■ Waiting 6s to retry ■■■■■■■■ Waiting 6s to retry ■■■■■■■■■ Waiting 6s
-    ## to retry ■■■■■■■■■■ Waiting 6s to retry ■■■■■■■■■■■ Waiting 6s to retry
-    ## ■■■■■■■■■■■■ Waiting 6s to retry ■■■■■■■■■■■■■ Waiting 6s to retry
-    ## ■■■■■■■■■■■■■■ Waiting 6s to retry ■■■■■■■■■■■■■■■ Waiting 6s to retry
-    ## ■■■■■■■■■■■■■■■■ Waiting 6s to retry ■■■■■■■■■■■■■■■■■ Waiting 6s to retry
-    ## ■■■■■■■■■■■■■■■■■■ Waiting 6s to retry ■■■■■■■■■■■■■■■■■■■ Waiting 6s to retry
-    ## ■■■■■■■■■■■■■■■■■■■■ Waiting 6s to retry ■■■■■■■■■■■■■■■■■■■■■ Waiting 6s to
-    ## retry ■■■■■■■■■■■■■■■■■■■■■■ Waiting 6s to retry ■■■■■■■■■■■■■■■■■■■■■■■
-    ## Waiting 6s to retry ■■■■■■■■■■■■■■■■■■■■■■■■ Waiting 6s to retry
-    ## ■■■■■■■■■■■■■■■■■■■■■■■■■ Waiting 6s to retry ■■■■■■■■■■■■■■■■■■■■■■■■■■
-    ## Waiting 6s to retry ■■■■■■■■■■■■■■■■■■■■■■■■■■■ Waiting 6s to retry
-    ## ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ Waiting 6s to retry
-    ## ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ Waiting 6s to retry
-    ## ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ Waiting 4s to retry ■■■■■■■■ Waiting 4s to retry
-    ## ■■■■■■■■■■ Waiting 4s to retry ■■■■■■■■■■■ Waiting 4s to retry ■■■■■■■■■■■■■
-    ## Waiting 4s to retry ■■■■■■■■■■■■■■■ Waiting 4s to retry ■■■■■■■■■■■■■■■■
-    ## Waiting 4s to retry ■■■■■■■■■■■■■■■■■ Waiting 4s to retry ■■■■■■■■■■■■■■■■■■■
-    ## Waiting 4s to retry ■■■■■■■■■■■■■■■■■■■■ Waiting 4s to retry
-    ## ■■■■■■■■■■■■■■■■■■■■■■ Waiting 4s to retry ■■■■■■■■■■■■■■■■■■■■■■■■ Waiting 4s
-    ## to retry ■■■■■■■■■■■■■■■■■■■■■■■■■ Waiting 4s to retry
-    ## ■■■■■■■■■■■■■■■■■■■■■■■■■■■ Waiting 4s to retry ■■■■■■■■■■■■■■■■■■■■■■■■■■■■
-    ## Waiting 4s to retry ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 
 Combine AQS Files
 

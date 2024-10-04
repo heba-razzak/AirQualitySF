@@ -8,6 +8,8 @@ library(riem)          # Download weather station data
 library(dplyr)         # Data manipulation
 library(sf)            # Spatial data manipulation
 library(leaflet)       # Interactive maps
+library(htmlwidgets)   # Creating HTML widgets
+library(webshot)       # Convert URL to image
 library(DataOverviewR) # Data dictionary and summary
 ```
 
@@ -25,7 +27,7 @@ st_crs(bbox_sf) <- 4326
 new_bbox_sf <- st_buffer(bbox_sf, 25000)
 ```
 
-Get weather stations in the Bay Area
+Get airport weather stations in the Bay Area
 
 ``` r
 # Networks where name contains "california"
@@ -43,17 +45,23 @@ filepath <- file.path("data", "raw", "weather_stations.gpkg")
 st_write(stations_within_bbox, filepath, driver = "GPKG", append=FALSE)
 ```
 
-Map of Weather Stations in Bay Area
+Map of Airport Weather Stations in Bay Area
 
 ``` r
-leaflet() %>%
-  addCircleMarkers(data = stations_within_bbox, popup = ~id,
-                   fillColor = "blue", fillOpacity = 1,
-                   color = "blue", weight = 2, opacity = 1, radius = 2) %>%
+img_path <- file.path("../docs", "plots", "weather-stations-map.png")
+if (!file.exists(img_path)) {
+  map_path <- file.path("../docs", "maps", "weather-stations-map.html")
+  m <- leaflet() %>%
+  addCircleMarkers(data = stations_within_bbox, popup = ~as.character(id), label = ~as.character(id),
+                   fillColor = "#d90429", fillOpacity = 0.5, weight = 0, radius = 5) %>%
   addProviderTiles("CartoDB")
+  saveWidget(m, file = map_path)
+  webshot(map_path, file = img_path)
+}
+knitr::include_graphics(img_path)
 ```
 
-![](../docs/plots/stations-map-1.png)<!-- -->
+<img src="../docs/plots/weather-stations-map.png" width="992" />
 
 Download Weather Station Hourly Data for 2018-2019
 
@@ -69,7 +77,7 @@ if (!file.exists(filepath)) {
     # Get measures for the current station
     measures <- riem_measures(station = id, date_start = "2018-01-01", date_end = "2019-12-31")
     
-    if (is.null(measures)) {next}
+    if (is.null(measures)) next
     
     # select relevant columns
     measures_subset = measures %>% 
@@ -105,7 +113,7 @@ if (!file.exists(filepath)) {
 
 **Data Dictionary**
 
-#### Weather Stations Bay Area Hourly 2018-2019
+#### Airport Weather Stations Bay Area Hourly 2018-2019
 
 `588,075` rows
 

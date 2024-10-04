@@ -4,20 +4,7 @@ output: github_document
 knit: (function(input, ...) {rmarkdown::render(input, output_dir = "../docs", )})
 ---
 
-# FIRE CALCULATION
-```{r}
-# Create a combined score based on distance and recency
-fire_impact <- purpleair_fires_df %>%
-  mutate(
-    recency_weight = 1 + max(0, fire_days1 - fire_days2),
-    distance_weight = 1 / fire_distance,
-    impact_score = recency_weight * distance_weight
-  ) %>%
-  group_by(sensor_index, sensor_date) %>%
-  slice_max(impact_score)  # Keep fire with highest impact score for each sensor and date
-
-```
-
+# which(purpleairs_buffers$sensor_index == 22481)
 
 ```{r, setup, echo=FALSE}
 knitr::opts_chunk$set(fig.path = "../docs/plots/", fig.dim = c(6, 4))
@@ -39,9 +26,17 @@ Load required libraries
 library(dplyr)         # Data manipulation
 ```
 
+```{r, read-sensors-csv, echo = FALSE}
+# Read sensors data
+filepath <- file.path("data", "raw", "pa_sensors.csv")
+pa_sensors <- read.csv(filepath)
+pa_sf <- st_as_sf(pa_sensors, coords=c("longitude", "latitude"), crs = 4326)
+```
+
 ```{r, echo = FALSE}
-# CRS (coordinate reference system)
-crs = 4326
+# Coordinate Reference System (CRS)
+# CRS 4326: WGS 84 (lat/lon in degrees, global standard for GPS)
+# CRS 3310: NAD83 / California Albers (projected in meters, used for California)
 ```
 
 **Download Sensor Data**\

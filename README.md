@@ -8,21 +8,22 @@ To achieve this goal, the project integrates and analyzes diverse datasets sourc
 
 ## Contents
 
--   [01_download_purpleair](docs/01_download_purpleair.md): Download PurpleAir hourly PM2.5 data for 2018-2019 in the Bay Area.
+-   [01_purpleair_data](docs/01_purpleair_data.md): Download PurpleAir hourly PM2.5 data for 2018-2019 in the Bay Area.
 
--   [02_download_aqs](docs/02_download_aqs.md): Download US Environmental Protection Agency: Air Quality System (AQS) data for 2018-2019 in the bay area.
+-   [02_aqs_data](docs/02_aqs_data.md): Download US Environmental Protection Agency: Air Quality System (AQS) data for 2018-2019 in the bay area.
 
--   [03_download_weather](docs/03_download_weather.md): Retrieve weather station data for environmental context.
+-   [03_weather_data](docs/03_weather_data.md): Retrieve weather station data for environmental context.
 
--   [04_download_osm](docs/04_download_osm.md): Download OSM data for spatial features.
+-   [04_wildfire_data](docs/04_wildfire_data.md): Wildfire data, proximity calculations for each PurpleAir sensor.
 
--   [05_spatial_operations](docs/05_spatial_operations.md): Perform spatial operations to calculate road lengths, building areas, tree counts, and wildfire proximity calculations for each PurpleAir sensor.
+-   [05_osm_data](docs/05_osm_data.md): Download OSM data for spatial features.
 
--   [06_eda_purpleair](docs/06_eda_purpleair.md): Conduct exploratory data analysis (EDA) with visualizations.
+-   [06_uber_data](docs/06_uber_data.md): Uber speeds data integration.
+
+-   [07_eda_purpleair](docs/07_eda_purpleair.md): Conduct exploratory data analysis (EDA) with visualizations.
+
+-   [00_feature_engineering](docs/00_feature_engineering.md): Create new features for predictive modeling.
+
+-   [00_modeling](docs/00_modeling.md): Build and evaluate the predictive model for PM2.5.
+
 -   [00_](docs/00_.md): Details.
--   [00_](docs/00_.md): Details.
--   [00_](docs/00_.md): Details.
-
-00_feature_engineering: Create new features for predictive modeling.
-
-00_modeling: Build and evaluate the predictive model for PM2.5.

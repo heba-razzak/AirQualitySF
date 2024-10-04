@@ -1,0 +1,212 @@
+---
+title: "Weather Data"
+output: github_document
+knit: (function(input, ...) {rmarkdown::render(input, output_dir = "../docs", )})
+---
+
+### Iowa Environmental Mesonet (IEM)
+#### Automated Airport Weather Observations
+
+```{r, setup, include=FALSE}
+knitr::opts_chunk$set(fig.path = "../docs/plots/")
+```
+
+```{r, github-package, include=FALSE}
+if (!"DataOverviewR" %in% rownames(installed.packages())) {
+  suppressMessages({devtools::install_github("heba-razzak/DataOverviewR")})
+}
+```
+
+Load required libraries
+
+```{r, load-libraries, message = FALSE, warning = FALSE}
+library(riem)          # Download weather station data
+library(dplyr)         # Data manipulation
+library(sf)            # Spatial data manipulation
+library(leaflet)       # Interactive maps
+library(htmlwidgets)   # Creating HTML widgets
+library(webshot)       # Convert URL to image
+library(DataOverviewR) # Data dictionary and summary
+```
+
+Define Bay Area bounding box
+
+```{r, bbox-setup, eval=TRUE}
+# Greater san fran area
+bbox <- c(xmin = -123.8, ymin = 36.9, xmax = -121.0, ymax = 39.0)
+
+# Convert the bounding box to an sf object and set the CRS (WGS 84)
+bbox_sf <- st_as_sfc(st_bbox(bbox))
+st_crs(bbox_sf) <- 4326
+
+# Create a buffered area around the bounding box (25 km buffer)
+new_bbox_sf <- st_buffer(bbox_sf, 25000)
+```
+
+Get weather stations in the Bay Area
+
+```{r, weather-stations, results = "hide", message = FALSE, warning = FALSE}
+# Networks where name contains "california"
+cali_networks <- riem_networks() %>% filter(grepl("California", name, ignore.case = TRUE))
+stations <- riem_stations(network = cali_networks$code) %>% select(id,name,elevation,county,lon,lat)
+
+# convert stations to sf object
+stations_sf <- st_as_sf(stations, coords = c("lon", "lat"), crs = 4326)
+
+# get intersection of buffer with stations
+stations_within_bbox <- st_intersection(stations_sf, new_bbox_sf)
+
+filepath <- file.path("data", "raw", "weather_stations.gpkg") 
+
+st_write(stations_within_bbox, filepath, driver = "GPKG", append=FALSE)
+```
+
+Map of Weather Stations in Bay Area
+
+```{r, stations-map}
+img_path <- file.path("../docs", "plots", "weather-stations-map.png")
+if (!file.exists(img_path)) {
+  map_path <- file.path("../docs", "maps", "weather-stations-map.html")
+  m <- leaflet() %>%
+  addCircleMarkers(data = stations_within_bbox, popup = ~as.character(id), label = ~as.character(id),
+                   fillColor = "#d90429", fillOpacity = 0.5, weight = 0, radius = 5) %>%
+  addProviderTiles("CartoDB")
+  saveWidget(m, file = map_path)
+  webshot(map_path, file = img_path)
+}
+knitr::include_graphics(img_path)
+```
+
+Download Weather Station Hourly Data for 2018-2019
+
+```{r, download-weather, warning=FALSE}
+filepath <- file.path("data", "raw", "weather.csv")
+
+if (!file.exists(filepath)) {
+  # Initialize empty dataframe to store weather measures for all stations
+  measures_df <- data.frame()
+  
+  # Loop through each weather station within the specified bounding box
+  for (id in stations_within_bbox$id) {
+    # Get measures for the current station
+    measures <- riem_measures(station = id, date_start = "2018-01-01", date_end = "2019-12-31")
+    
+    if (is.null(measures)) next
+    
+    # select relevant columns
+    measures_subset = measures %>% 
+      select(station, valid, tmpf, relh, drct, sknt, gust, lon, lat) %>%
+      filter(if_any(c(tmpf, relh, drct, sknt, gust), ~ !is.na(.)))
+    
+    # Aggregate weather data to hourly intervals and calculate mean for each variable
+    measures_subset$timestamp <- format(measures_subset$valid, "%Y-%m-%d %H:00:00")
+    
+    # Create summary dataframe with hourly averages of weather variables for each station
+    summary_df <- measures_subset %>%
+      group_by(station, timestamp) %>%
+      summarize(
+        temp_fahrenheit = mean(tmpf, na.rm = TRUE),
+        rel_humidity = mean(relh, na.rm = TRUE),
+        wind_direction = mean(drct, na.rm = TRUE),
+        wind_speed = mean(sknt, na.rm = TRUE),
+        wind_gust = mean(gust, na.rm = TRUE),
+        lon = first(lon),
+        lat = first(lat),
+        .groups = 'drop')
+    
+    # Add to measures_df
+    measures_df <- rbind(measures_df, summary_df)
+  }
+  
+  # Save to CSV file
+  write.csv(measures_df, file = filepath, row.names = FALSE)
+}
+```
+
+```{r, read-weather-csv, echo = FALSE}
+filepath <- file.path("data", "raw", "weather.csv")
+weather_data <- read.csv(filepath)
+```
+
+---
+
+**Data Dictionary**
+
+```{r, data-dict, echo = FALSE}
+desc <- data_description(
+  weather_data,
+  var_desc = 
+    c("station" = "Three or four character site identifier",
+      "timestamp" = "Timestamp of the observation (UTC)",
+      "temp_fahrenheit" = "Air Temperature in Fahrenheit, typically @ 2 meters",
+      "rel_humidity" = "Relative Humidity in %",
+      "wind_direction" = "Wind Direction in degrees from *true* north",
+      "wind_speed" = "Wind Speed in knots",
+      "wind_gust" = "Wind Gust in knots",
+      "lon" = "Longitude",
+      "lat" = "Latitude"
+    ))
+
+data_dictionary(weather_data, 
+                data_title = "Weather Stations Bay Area Hourly 2018-2019", 
+                descriptions = desc,
+                hide = c("NA_Count", "NA_Percentage", "N_Unique", "top_n"))
+```
+
+```{r, data-dict2, echo = FALSE}
+data_dictionary(weather_data, 
+                data_title = "Missing Values",
+                hide = c("top_n", "Type", "N_Unique"))
+```
+
+**View data**
+
+```{r, data-head, echo = FALSE}
+knitr::kable(head(weather_data, 3), row.names = FALSE, format = "markdown")
+```
+
+---
+
+```{r, read-sensors-csv, echo = FALSE}
+# Read sensors data
+filepath <- file.path("data", "raw", "pa_sensors.csv")
+pa_sensors <- read.csv(filepath)
+pa_sf <- st_as_sf(pa_sensors, coords=c("longitude", "latitude"), crs = 4326) %>% select(sensor_index)
+```
+
+Filter out weather stations with insufficient data
+
+```{r, weather-counts}
+# Count rows of weather data for stations and filter out stations with < 95% rows
+keep_stations <- weather_data %>%
+  group_by(station) %>%
+  summarise(count = n(),
+            data_prop = n()/length(unique(weather_data$timestamp)), .groups = 'drop') %>% 
+  filter(data_prop >= 0.95) %>% 
+  pull(station)
+
+stations <- weather_data %>% select(station, lon, lat)
+stations_sf <- st_as_sf(stations, coords=c("lon", "lat"), crs = 4326)
+```
+
+Link Nearest Weather Stations to PurpleAir sensors
+
+```{r, nearest-weather-station}
+filepath <- file.path("data", "processed", "weatherstations_purpleair.csv")
+if (!file.exists(filepath)) {
+  # Find the index of the nearest weather station for each sensor
+  nearest_station_index <- st_nearest_feature(pa_sf, stations_sf)
+  
+  # Calculate the distance to the nearest weather station for each sensor
+  distances <- st_distance(pa_sf, stations_sf[nearest_station_index, ], by_element = TRUE)
+  
+  # Add nearest weather stations and distances to PurpleAir data frame
+  pa_sf$station <- stations_sf$station[nearest_station_index]
+  pa_sf$station_distance <- as.numeric(distances)
+  
+  weather_pa <- pa_sf %>% st_drop_geometry()
+  
+  # Save PurpleAir sensors and weather stations shapefile
+  write.csv(weather_pa, filepath)
+}
+```

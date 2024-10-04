@@ -4,6 +4,40 @@ output: github_document
 knit: (function(input, ...) {rmarkdown::render(input, output_dir = "../docs", )})
 ---
 
+```{r}
+  # Sensor index and active dates
+  sensor_dates <- purpleair_data %>% 
+    mutate(sensor_date = as.Date(time_stamp)) %>%
+    select(sensor_index, sensor_date) %>% distinct()
+  
+  # Fire info
+  fire_df <- fire %>% select(fire_id, fire_start, fire_end, fire_acres) %>% st_drop_geometry()
+  
+  # Join Purpleair sensors active date and fire info
+  purpleair_fires_df <- pa_fire_dist_dir %>%
+    left_join(sensor_dates, by = "sensor_index") %>%
+    left_join(fire_df, by = "fire_id")
+  
+  # Create features for fire
+  pafire <- purpleair_fires_df %>%
+    mutate(fire_days1 = pmax(0, 1 + as.numeric(sensor_date - fire_start)),
+           fire_days2 = ifelse(fire_days1 == 0 , 0, 1 + pmax(0,as.numeric(sensor_date - fire_end))),
+           active_or_recent_fire = (fire_days2 == 1 | (fire_days2 > 1 & fire_days2 <= 8)),
+           fire_distance = round(fire_distance),
+           fire_acres = round(fire_acres)) %>% 
+    filter(active_or_recent_fire) %>%
+    select(sensor_index, sensor_date, fire_id, fire_days1, fire_days2, fire_distance, fire_acres, fire_direction)
+  
+  ## ADD DISTANCE FILTER ?
+  
+  # add fire features to dataset
+  fire_data <- purpleair_data %>%
+    mutate(sensor_date = as.Date(time_stamp)) %>%
+    left_join(pafire, by = c("sensor_index" = "sensor_index", "sensor_date" = "sensor_date")) %>%
+    select(-sensor_date) %>%
+    replace_na(list(fire_days1 = 0, fire_days2 = 0, fire_distance = 0, fire_acres = 0, fire_direction = 0))
+```
+
 # FIRE CALCULATION
 ```{r}
 # Create a combined score based on distance and recency
