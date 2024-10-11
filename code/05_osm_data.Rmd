@@ -56,11 +56,15 @@ img_path <- file.path("../docs", "plots", "pa-buffer-map.png")
 if (!file.exists(img_path)) {
   map_path <- file.path("../docs", "maps", "pa-buffer-map.html")
   m <- leaflet() %>%
-    addCircleMarkers(data = pa_sf, popup = ~as.character(sensor_index), label = ~as.character(sensor_index),
-                     color = "#AA44AA", weight = 2, radius = 2) %>%
-    addPolygons(data = purpleairs_buffers, popup = ~id,
+    addPolygons(data = purpleairs_buffers, 
+                popup = ~paste("sensor_index:", sensor_index), 
+                label = ~paste("sensor_index:", sensor_index),
                 color = "#AA44AA", opacity = 0.5, weight = 1,
                 fillColor = "#dec9e9", fillOpacity = 0.2) %>%
+    addCircleMarkers(data = pa_sf, 
+                     popup = ~paste("sensor_index:", sensor_index), 
+                     label = ~paste("sensor_index:", sensor_index),
+                     color = "#AA44AA", weight = 2, radius = 1) %>%
     addProviderTiles("CartoDB") %>%
     setView(lng = -122.4194, lat = 37.7749, zoom = 12)
   saveWidget(m, file = map_path)
@@ -78,8 +82,8 @@ filepath <- file.path("data", "raw", "bayarea_osm_roads.gpkg")
 if (!file.exists(filepath)) {
   # Download OSM roads data for each sensor buffer
   for (i in 1:nrow(purpleairs_buffers)) {
-    output_name <- paste0("sensor", purpleairs_buffers$sensor_index[i], "_osm_roads.gpkg")
-    filename <- file.path("data", "raw", "OSM", output_name)
+    sensor_index <- purpleairs_buffers$sensor_index[i]
+    filename <- file.path("data", "raw", "OSM", paste0("roads_sensor", sensor_index, ".gpkg"))
     
     if (file.exists(filename)) next
     
@@ -115,28 +119,42 @@ if (!file.exists(filepath)) {
   }
   
   # Save OSM road data for sensors into a single file
-  file_paths <- list.files(file.path("data", "raw", "OSM"), pattern = "^sensor.*_osm_roads\\.gpkg$", full.names = TRUE)
+  file_paths <- list.files(file.path("data", "raw", "OSM"),
+                           pattern = "^roads_sensor.*\\.gpkg$", full.names = TRUE)
   sf_list <- lapply(file_paths, st_read, quiet = TRUE)
   merged_sf <- do.call(rbind, sf_list) %>% distinct()
   st_write(merged_sf, filepath, driver = "GPKG", append = FALSE, quiet = TRUE)
 }
 ```
 
-Download OSM Landuse, Natural, Leisure, Boundary, Waterway
+Download OSM Landuse, Natural, Leisure, Boundary
+
+```{r, dif-server, include = FALSE, eval = FALSE}
+# If osmdata is failing (Waiting 12s to retry)
+# Try using different overpass server
+# https://wiki.openstreetmap.org/wiki/Overpass_API#Public_Overpass_API_instances
+
+old_url <- "https://overpass.kumi.systems/api/interpreter"
+new_url <- "https://overpass-api.de/api/interpreter"
+get_overpass_url()
+set_overpass_url(new_url)
+```
 
 ```{r, osm-land, warning = FALSE}
 filepath <- file.path("data", "raw", "bayarea_osm_land.gpkg")
 
-process_polygons <- function(osm_data, land_key, geom) {
+process_polygons <- function(osm_data, osm_key, geom) {
   if (!is.null(osm_data) && nrow(osm_data) > 0) {
     osm_data <- st_make_valid(st_cast(osm_data, "POLYGON"))
     osm_data$osm_id <- ifelse("osm_id" %in% names(osm_data), osm_data$osm_id, rownames(osm_data))
-    osm_data[[land_key]] <- ifelse(land_key %in% names(osm_data), osm_data[[land_key]], NA)
-    if (land_key == "boundary") {
+    osm_data$name <- ifelse("name" %in% names(osm_data), osm_data$name, NA)
+    osm_data[[osm_key]] <- ifelse(osm_key %in% names(osm_data), osm_data[[osm_key]], NA)
+    if (osm_key == "boundary") {
       osm_data <- osm_data %>% filter(boundary %in% c("national_park", "protected_area"))
     }
-    osm_data <- osm_data %>% mutate(land = osm_data[[land_key]], land_key = land_key) %>%
-      select(osm_id, land, land_key) %>%
+    osm_data <- st_make_valid(osm_data)
+    osm_data <- osm_data %>% mutate(osm_value = osm_data[[osm_key]], osm_key = osm_key) %>%
+      select(osm_id, osm_value, osm_key, name) %>%
       st_intersection(geom)
     return(osm_data)
   }
@@ -146,92 +164,150 @@ process_polygons <- function(osm_data, land_key, geom) {
 if (!file.exists(filepath)) {
   osm_keys <- c("landuse", "natural", "leisure", "boundary")
   all_land_data <- NULL
-  # for (i in 1:nrow(purpleairs_buffers)) {
-  for (i in 1:1) {
+  for (i in 1:nrow(purpleairs_buffers)) {
     sensor_index <- purpleairs_buffers$sensor_index[i]
-    land_data <- NULL
-    for (land_key in osm_keys) {
+    filename <- file.path("data", "raw", "OSM", paste0("land_sensor", sensor_index, ".gpkg"))
+    if (file.exists(filename)) next
+    for (osm_key in osm_keys) {
       bb <- purpleairs_buffers[i, ]$geom
       # Download OSM data for each key
       osm <- opq(bbox = bb) %>%
-        add_osm_feature(key = land_key) %>%
+        add_osm_feature(key = osm_key) %>%
         osmdata_sf()
       # Combine polygons and multipolygons
-      osm_p <- process_polygons(osm$osm_polygons, land_key, bb)
-      osm_mp <- process_polygons(osm$osm_multipolygons, land_key, bb)
+      osm_p <- process_polygons(osm$osm_polygons, osm_key, bb)
+      osm_mp <- process_polygons(osm$osm_multipolygons, osm_key, bb)
       key_data <- rbind(osm_p, osm_mp)
       land_data <- rbind(land_data, key_data)
     }
     if (is.null(land_data) || nrow(land_data) == 0) next 
     land_data <- land_data %>% 
       mutate(sensor_index = sensor_index) %>%
-      select(sensor_index, osm_id, land, land_key) 
-    all_land_data <- rbind(all_land_data, land_data)
+      select(sensor_index, osm_id, osm_value, osm_key, name) 
+    st_write(land_data, filename, driver = "GPKG", append = FALSE, quiet = TRUE)
   }
-  st_write(all_land_data, filepath, driver = "GPKG", append = FALSE, quiet = TRUE)
+  # Save OSM land data for sensors into a single file
+  file_paths <- list.files(file.path("data", "raw", "OSM"),
+                           pattern = "^land_sensor.*\\.gpkg$", full.names = TRUE)
+  sf_list <- lapply(file_paths, st_read, quiet = TRUE)
+  merged_sf <- do.call(rbind, sf_list) %>% distinct()
+  st_write(merged_sf, filepath, driver = "GPKG", append = FALSE, quiet = TRUE)
 }
 ```
 
-```{r}
-mapview(all_land_data)
-```
-
-```{r}
+```{r, echo = FALSE}
 filepath <- file.path("data", "raw", "bayarea_osm_roads.gpkg")
-osm_roads <- st_read(filepath)
-# filepath <- file.path("data", "raw", "bayarea_osm_land_no_intersection.gpkg")
+osm_roads <- st_read(filepath, quiet = TRUE)
+```
+
+```{r, echo = FALSE}
 filepath <- file.path("data", "raw", "bayarea_osm_land.gpkg")
-osm_land <- st_read(filepath)
-keysss <- osm_land %>% st_drop_geometry() %>% select(land, key) %>% distinct() %>% arrange(key, land)
+osm_land <- st_read(filepath, quiet = TRUE)
+```
+
+Frequency of osm keys and values near sensors
+
+```{r}
+key_value_counts <- osm_land %>%
+  st_drop_geometry() %>%
+  distinct() %>%
+  group_by(osm_key, osm_value) %>%
+  summarize(n_osmids = n_distinct(osm_id),
+            n_sensors = n_distinct(sensor_index),
+            .groups = 'drop') %>% 
+  arrange(osm_key, desc(n_sensors))
+key_value_counts
+```
+
+```{r}
+key_counts <- osm_land %>%
+  st_drop_geometry() %>%
+  distinct() %>%
+  group_by(osm_key) %>%
+  summarize(n_osmids = n_distinct(osm_id),
+            n_sensors = n_distinct(sensor_index),
+            .groups = 'drop') %>% 
+  arrange(osm_key, desc(n_sensors))
+key_counts
 ```
 
 
+
+
+
+
+Check where NA values
+
 ```{r}
-bbox <- c(xmin = -122.5, ymin = 37.8, xmax = -122.4, ymax = 37.7)
-bbox_polygon <- st_as_sfc(st_bbox(bbox))
-st_crs(bbox_polygon) <- 4326
-sanfran_sensors <- st_intersection(pa_sf, bbox_polygon)
-sf_roads <- osm_roads %>% filter(sensor_index %in% unique(sanfran_sensors$sensor_index))
-sf_land <- osm_land %>% filter(sensor_index %in% unique(sanfran_sensors$sensor_index))
+library(mapview)
+osm_land %>% filter(is.na(osm_value))
 
 
-# "landuse", "natural", "leisure", "boundary"
-
-
-thiskey = "natural"
-notthis <- osm_land %>% filter(key != thiskey)
-onlythis <- osm_land %>% filter(key == thiskey, (!osm_id %in% notthis$osm_id))
-# onlythis <- osm_land %>% filter(key == thiskey, (!osm_id %in% notthis$osm_id), land %in% c("national_park", "protected_area"))
-
-# onlythis <- osm_land %>% filter(key == thiskey, land %in% c("hazard"))
-
-mapview(onlythis)
-
-# only landuse: 46,642
-# only natural: 25703
-# only leisure: 59,877
-# only boundary: 247 boundary (national_park,protected_area,hazard)
-
-x <- osm_p
-x2 <- osm_mp
-# 829462466
-osm_p %>% filter(osm_id == "829462466")
-osm_mp %>% filter(osm_id == "829462466")
+na_check <- osm_land %>% filter(osm_id == 548274970, sensor_index == 10092)
+mapview(na_check, col.regions = "#8ac926", alpha.regions = 0.5)
+```
 
 
 
-landuseorleisure <- osm_land %>% filter(key %in% c("landuse", "leisure"))
-onlynatural <- osm_land %>% 
-  select(osm_id, land, key) %>%
-  filter(key == "natural", (!osm_id %in% landuseorleisure$osm_id)) %>%
-  st_make_valid() %>% 
-  distinct(osm_id, .keep_all = TRUE)
-onlyboundary <- osm_land %>% filter(key == "boundary", (!osm_id %in% landuseorleisure$osm_id),
-                                    land %in% c("national_park", "protected_area")) %>%
-  distinct(osm_id, .keep_all = TRUE)
 
 
-mapview(onlynatural, col.regions = "green", alpha.regions = 0.5) + mapview(onlyboundary, col.regions = "blue", alpha.regions = 0.5)
+
+Might need later
+
+```{r, eval = FALSE, echo = FALSE}
+(is.na(access) | access != "private")
+(key == "leisure", land == "swimming_pool")
+
+pools <- osm_land %>% filter(osm_key == "leisure", osm_value == "swimming_pool")
+```
+
+
+Map of polygon outlines and polygons filled
+With labels (hover) and popups (click) 
+
+```{r, eval = FALSE, echo = FALSE}
+colors = c("#1982c4", "#8ac926", "#ff595e")
+
+m <- leaflet() %>%
+  addPolygons(data = purpleairs_buffers[i, ],
+              popup = ~paste("sensor_index:", sensor_index),
+              label = ~paste("sensor_index:", sensor_index),
+              color = "black", opacity = 1, weight = 1,
+              fillOpacity = 0) %>%
+  addPolygons(data = osm_data,
+              # popup = ~paste(name, "osm_id:", osm_id),
+              # label = ~paste(name, "osm_id:", osm_id),
+              color = "#8ac926", opacity = 0.5, weight = 2, 
+              fillColor = "#8ac926", fillOpacity = 0) %>%
+  addProviderTiles("CartoDB")
+m
+```
+
+Mapview
+
+```{r}
+mapview(onlynatural, col.regions = "#8ac926", alpha.regions = 0.5) + mapview(onlyboundary, col.regions = "#1982c4", alpha.regions = 0.5)
+```
+
+Save map
+
+```{r, eval = FALSE, echo = FALSE}
+img_path <- file.path("../docs", "plots", "landuse-map.png")
+if (!file.exists(img_path)) {
+  map_path <- file.path("../docs", "maps", "landuse-map.html")
+  m <- leaflet() 
+  # save map as html
+  saveWidget(m, file = map_path)
+  # save html as image
+  webshot(map_path, file = img_path)
+}
+knitr::include_graphics(img_path)
+```
+
+Select columns with at least 90% data 
+
+```{r, eval = FALSE, echo = FALSE}
+x <- x %>% select(where(~ sum(is.na(.)) / nrow(x) < 0.9))
 ```
 
 Highway meanings
@@ -295,139 +371,18 @@ salt_pond,  tidal
 5. Water bodies
 water,  riverbank,  reservoir,  basin,  dock,  canal,  pond
 
-```{}
-# # bay area
-# bbox <- c(xmin = -123.8, ymin = 36.9, xmax = -121.0, ymax = 39.0)
 
-# tiny bbox
-bbox <- c(xmin = -122.46, ymin = 37.76, xmax = -122.42, ymax = 37.72)
-
-bbox_sf <- st_as_sfc(st_bbox(bbox))
-st_crs(bbox_sf) <- 4326
-
-landuse_sf <- opq(bbox = bbox_sf) %>%
-add_osm_feature(key = "landuse") %>%
-osmdata_sf()
-
-leisure_sf <- opq(bbox = bbox_sf) %>%
-add_osm_feature(key = "leisure") %>%
-osmdata_sf()
-
-waterway_sf <- opq(bbox = bbox_sf) %>%
-add_osm_feature(key = "waterway") %>%
-osmdata_sf()
-
-natural_sf <- opq(bbox = bbox_sf) %>%
-add_osm_feature(key = "natural") %>%
-osmdata_sf()
-
-boundary_sf <- opq(bbox = bbox_sf) %>%
-add_osm_feature(key = "boundary") %>%
-osmdata_sf()
-```
-
-```{}
-# Convert all downloaded data to sf objects for visualization
-landuse_pol <- st_as_sf(landuse_sf$osm_polygons) %>% select(osm_id, landuse)
-landuse_mpol <- st_as_sf(landuse_sf$osm_multipolygons) %>% select(osm_id, landuse)
-# leisure_sf_sf <- st_as_sf(leisure_sf$osm_polygons)
-# waterway_sf_sf <- st_as_sf(waterway_sf$osm_lines)
-# natural_sf_sf <- st_as_sf(natural_sf$osm_polygons)
-```
-
-
-```{}
-x <- as.data.frame(landuse_sf_sf)
-x %>% 
-group_by(landuse) %>%
-summarise(count = n()) %>%
-arrange(desc(count))
-
-osmids <- x %>% filter(is.na(landuse)) %>% mutate(osm_id = as.numeric(osm_id)) %>% pull(osm_id)
-
-# node, way, or relation
-osmObj <- opq_osm_id(type = "node", id = osmids) %>%
-opq_string() %>%
-osmdata_sf()
-
-osmObj$osm_points
-```
-
-
-```{}
-colnames(x)
-
-unique(x$landuse)
-
-x2 <- x %>% select(where(~ sum(is.na(.)) / nrow(x) < 0.9))
-
-library(DataOverviewR)
-
-data_dictionary(x2)
-
-
-```
-
-```{}
-img_path <- file.path("../docs", "plots", "landuse-map.png")
-if (!file.exists(img_path)) {
-map_path <- file.path("../docs", "maps", "landuse-map.html")
-m <- leaflet() %>%
-addCircleMarkers(data = pa_sf, color = "#AA44AA", weight = 1, radius = 1) %>%
-addPolygons(data = purpleairs_buffers,
-color = "#AA44AA", opacity = 0.5, weight = 1,
-fillColor = "#AA44AA", fillOpacity = 0.2) %>%
-addPolygons(data = landuse_sf_sf,
-color = "#4682B4", opacity = 0.5, weight = 1,
-fillColor = "#4682B4", fillOpacity = 0.2) %>%
-addProviderTiles("CartoDB") %>%
-setView(lng = -122.4194, lat = 37.7749, zoom = 12)
-saveWidget(m, file = map_path)
-webshot(map_path, file = img_path)
-}
-
-knitr::include_graphics(img_path)
-```
-
-
-```{}
-
-# Plot all features together
-ggplot() +
-geom_sf(data = natural_sf_sf, fill = "green", alpha = 0.4, color = NA) +
-geom_sf(data = landuse_sf_sf, fill = "blue", alpha = 0.4, color = NA) +
-geom_sf(data = boundary_sf_sf, fill = "purple", alpha = 0.4, color = NA) +
-geom_sf(data = leisure_sf_sf, fill = "yellow", alpha = 0.4, color = NA) +
-geom_sf(data = waterway_sf_sf, color = "cyan", size = 0.5) +
-theme_minimal() +
-labs(title = "Natural and Land Use Features in San Francisco")
-
-leaflet() %>%
-addTiles() %>%
-addPolygons(data = natural_sf_sf, fillColor = "#228B22", fillOpacity = 0.4, color = NA) %>%
-addPolygons(data = landuse_sf_sf, fillColor = "#4682B4", fillOpacity = 0.4, color = NA) %>%
-addPolygons(data = boundary_sf_sf, fillColor = "#800080", fillOpacity = 0.4, color = NA) %>%
-addPolygons(data = leisure_sf_sf, fillColor = "#FFD700", fillOpacity = 0.4, color = NA) %>%
-addPolylines(data = waterway_sf_sf, color = "#00FFFF", weight = 1) %>%
-addProviderTiles("CartoDB.Positron") %>%
-addLegend(
-position = "bottomright",
-colors = c("#228B22", "#4682B4", "#800080", "#FFD700", "#00FFFF"),
-labels = c("Natural", "Landuse", "Boundary", "Leisure", "Waterway"),
-title = "Features"
-)
-```
 
 
 Map of OpenStreetMap Roads
 
-```{r, plot-roads, results = FALSE}
+```{r, plot-roads, results = FALSE, eval = FALSE, echo = FALSE}
 img_path <- file.path("../docs", "plots", "roads-map.png")
 if (!file.exists(img_path)) {
   bayarea_roads <- st_read(file.path("data", "raw", "bayarea_roads_osm.gpkg"), quiet = TRUE)
   map_path <- file.path("../docs", "maps", "roads-map.html")
   m <- leaflet() %>%
-    addPolylines(data = bayarea_roads, 
+    addPolylines(data = bayarea_roads,
                  color = "#DD94A1", opacity = 0.5, weight = 1) %>%
     addProviderTiles("CartoDB") %>%
     setView(lng = -122.4194, lat = 37.7749, zoom = 12)
@@ -439,9 +394,8 @@ knitr::include_graphics(img_path)
 
 Map of OpenStreetMap Buildings
 
-```{}
-# ```{r, plot-buildings, results = FALSE}
-"#D7D0CA"
+```{r, eval = FALSE, echo = FALSE}
+color <- "#D7D0CA"
 
 bayarea_buildings <- st_read(file.path("data", "raw", "bayarea_buildings_osm.gpkg"), quiet = TRUE)
 ca <- counties("California", cb = TRUE, progress_bar=FALSE)
@@ -455,25 +409,7 @@ xlab("Longitude") + ylab("Latitude") +
 ggtitle("OSM Buildings")
 ```
 
-Map of OpenStreetMap Trees
-
-```{}
-# ```{r, plot-trees, results = FALSE} -->
-bayarea_trees <- st_read(file.path("data", "raw", "bayarea_trees_osm.gpkg"), quiet = TRUE)
-ca <- counties("California", cb = TRUE, progress_bar=FALSE)
-
-ggplot() + 
-geom_sf(data = ca, color="black", fill="antiquewhite", size=0.25) +
-geom_sf(data = bayarea_trees, color = "darkgreen", fill="forestgreen", size = 0.1) +
-coord_sf(xlim = c(-123.8, -121.0), ylim = c(36.9, 39.0)) +
-theme(panel.background = element_rect(fill = "aliceblue")) + 
-xlab("Longitude") + ylab("Latitude") +
-ggtitle("OSM Trees")
-```
-
-
-
-```{}
+```{r, eval = FALSE, echo = FALSE}
 ## Select small area of San Francisco to map
 
 bbox <- c(xmin = -122.46, ymin = 37.76, xmax = -122.42, ymax = 37.72)
