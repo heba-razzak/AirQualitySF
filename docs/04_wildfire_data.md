@@ -97,32 +97,36 @@ if (!file.exists(filepath)) {
   # Add Unique Fire ID
   fire_data <- fire %>%
     mutate(fire_id = row_number())
-  fwrite(fire_data %>% st_drop_geometry(), file.path("data", "processed", "wildfires.csv"))
+  
+  # save shapefile and csv of data with fire_id
+  fire_sf <- st_transform(fire_data, 4326) %>% select(fire_id)
+  write_sf(fire_sf, file.path("data", "processed", "wildfires.shp"), quiet = TRUE)
+  write.csv(fire_data %>% st_drop_geometry(), file.path("data", "processed", "wildfires.csv"), row.names = FALSE)
   
   # Filter for California, 2018, 2019 (& 5 days before 2018) 
-  fire_sf <- fire_data %>%
+  fire_sf_filtered <- fire_data %>%
     filter(YEAR_ %in% c(2017, 2018, 2019), STATE == "CA") %>% 
     select(fire_id)
   
   # Get distances between purpleAir sensors and fires (within 100km)
   pa_sf <- st_transform(pa_sf, crs = 3310)
-  fire_sf <- st_transform(fire_sf, crs = 3310)
-  pa_fire_distances <- st_distance(pa_sf, fire_sf, by_element = FALSE)
+  fire_sf_filtered <- st_transform(fire_sf_filtered, crs = 3310)
+  pa_fire_distances <- st_distance(pa_sf, fire_sf_filtered, by_element = FALSE)
   distances_df <- as.data.frame(as.table(pa_fire_distances))
   colnames(distances_df) <- c("sensor_pos", "fire_pos", "fire_distance")
   pa_fire_dist <- distances_df %>%
     mutate(
       sensor_index = pa_sf$sensor_index[sensor_pos],
-      fire_id = fire_sf$fire_id[fire_pos]
+      fire_id = fire_sf_filtered$fire_id[fire_pos]
     ) %>%
     select(sensor_index, fire_id, fire_distance) %>%
     mutate(fire_distance = drop_units(fire_distance)) %>% 
     filter(fire_distance <= 100000)
   
   # Get direction (bearing) between PurpleAir sensors and fires
-  fire_coords <- st_make_valid(fire_sf) %>%  st_transform(crs = 4326) %>% 
+  fire_coords <- st_make_valid(fire_sf_filtered) %>%  st_transform(crs = 4326) %>% 
     st_centroid() %>% st_coordinates() %>%  as.data.frame() %>% 
-    mutate(fire_id = fire_sf$fire_id) %>% select(fire_id, X, Y) %>%
+    mutate(fire_id = fire_sf_filtered$fire_id) %>% select(fire_id, X, Y) %>%
     rename(fire_x = X, fire_y = Y)
   
   sensor_coords <- st_transform(pa_sf, crs = 4326) %>% 
@@ -139,9 +143,11 @@ if (!file.exists(filepath)) {
            fire_direction = round((fire_bearing + 360) %% 360)) %>%
     select(sensor_index, fire_id, fire_distance, fire_direction)
   
-  fwrite(wildfires_purpleair, filepath)
+  write.csv(wildfires_purpleair, filepath, row.names = FALSE)
 }
 ```
+
+    ## Warning: st_centroid assumes attributes are constant over geometries
 
 ------------------------------------------------------------------------
 

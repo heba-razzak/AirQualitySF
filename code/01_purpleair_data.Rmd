@@ -30,6 +30,7 @@ library(leaflet)       # Interactive maps
 library(htmlwidgets)   # Creating HTML widgets
 library(webshot)       # Convert URL to image
 library(DataOverviewR) # Data dictionary and summary
+library(data.table)    # Working with large files
 ```
 
 ```{r, echo = FALSE}
@@ -149,9 +150,6 @@ filepath <- file.path("data", "raw", filename)
 
 # Read purple air data
 purpleair_data <- read.csv(filepath)
-purpleair_data <- purpleair_data %>% 
-  select(time_stamp, rssi, uptime, memory, humidity, temperature, pressure,
-         analog_input, pm2.5_alt, pm2.5_alt_a, pm2.5_alt_b, sensor_index, location_type)
 ```
 
 ```{r, write-sensors}

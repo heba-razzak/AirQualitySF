@@ -32,6 +32,8 @@ To achieve this goal, the project integrates and analyzes diverse datasets sourc
 
 -   [12_eda_uber](docs/12_eda_uber.md): EDA for Uber speeds data, looking at traffic trends and their impact on air quality.
 
+-   [13_data_integration](docs/13_data_integration.md): Integrate data sources to final dataset.
+
 -   [00_feature_engineering](docs/00_feature_engineering.md): Create new features for predictive modeling.
 
 -   [00_modeling](docs/00_modeling.md): Build and evaluate the predictive model for PM2.5.
