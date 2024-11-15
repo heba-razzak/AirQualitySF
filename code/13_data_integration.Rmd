@@ -1,200 +1,405 @@
 ---
-title: "Data Integration"
+title: "Data Integration" 
 output: github_document
+knit: (function(input, ...) {rmarkdown::render(input, output_dir = "../docs", )})
 ---
+
+```{r, setup, echo=FALSE}
+knitr::opts_chunk$set(fig.path = "../docs/plots/")
+```
 
 # Create final dataset
 
-```{r setup, include=FALSE}
-osm_directory <- readr::read_file("inputs/osm_directory.txt")
-purpleair_directory <- readr::read_file("inputs/purpleair_directory.txt")
-preprocessing_directory <- readr::read_file("inputs/preprocessing_directory.txt")
-```
 
-## Load required libraries
+Load required libraries
+
 ```{r, load-libraries, message = FALSE, warning = FALSE}
-library(dplyr) # For data manipulation
-library(data.table) # Faster than dataframes (for big files)
-library(sf) # For working with spatial data
-# library(mapview) # For interactive maps
-# library(lubridate) # Dates
-# library(purrr) 
+library(dplyr)         # Data manipulation
+library(sf)            # Spatial data manipulation
+library(ggplot2)       # Data visualization
+library(kableExtra)    # Printing formatted tables
+library(purpleAirAPI)  # Download PurpleAir Data
+library(leaflet)       # Interactive maps
+library(htmlwidgets)   # Creating HTML widgets
+library(webshot)       # Convert URL to image
+library(DataOverviewR) # Data dictionary and summary
+library(data.table)    # Working with large files
 ```
 
-## Read files
-```{r, read-files, eval=FALSE}
-purpleair_fires <- fread(file.path("data", "processed", "wildfires_purpleair_dates.csv")) %>% select(-fire_id)
 
-purpleair_data <- read.csv(file.path("data", "raw", "purpleair_2018-01-01_2019-12-31.csv"))
+<!-- ```{r, read-pa, echo = FALSE} -->
+<!-- purpleair_data <- read.csv(file.path("data", "processed", "purpleair_processed.csv")) -->
+<!-- ``` -->
 
-purpleair_sensors <- st_read(paste0(purpleair_directory, "/purpleair_sensors.gpkg"), quiet = TRUE)
-osm_roads <- st_read(paste0(osm_directory, "/sanfrangrid_roads_osm.gpkg"), quiet = TRUE)
+<!-- ```{r} -->
+<!-- # Lag features for pm2.5 -->
+<!-- purpleair_data <- purpleair_data %>% -->
+<!--   arrange(sensor_index, time_stamp) %>% -->
+<!--   group_by(sensor_index) %>% -->
+<!--   mutate( -->
+<!--     pm2.5_alt_lag1 = lag(pm2.5_alt, 1), -->
+<!--     pm2.5_alt_lag6 = lag(pm2.5_alt, 6), -->
+<!--     pm2.5_alt_lag12 = lag(pm2.5_alt, 12), -->
+<!--     pm2.5_alt_lag24 = lag(pm2.5_alt, 24) -->
+<!--   ) %>% -->
+<!--   ungroup() -->
+<!-- ``` -->
+
+<!-- ```{r, read-fire-pa, echo = FALSE} -->
+<!-- wildfires_purpleair_dates <- read.csv(file.path("data", "processed", "wildfires_purpleair_dates.csv")) -->
+
+<!-- weather_data <- read.csv(file.path("data", "raw", "weather.csv")) %>%  -->
+<!--   select(station, timestamp, temp_fahrenheit, rel_humidity, wind_direction, wind_speed) -->
+
+<!-- weather_pa <- read.csv(file.path("data", "processed", "weatherstations_purpleair.csv")) %>%  -->
+<!--   select(sensor_index, station, station_distance) -->
+
+<!-- weather_pa_data <- weather_data %>% -->
+<!--   inner_join(weather_pa, by = "station") -->
+
+<!-- names(purpleair_data) -->
+<!-- names(wildfires_purpleair_dates) -->
+<!-- ``` -->
+
+<!-- ```{r} -->
+<!-- library(lubridate) -->
+
+<!-- # Step 1: Ensure timestamps are compatible -->
+<!-- purpleair_data <- purpleair_data %>% -->
+<!--   mutate(time_stamp = as.POSIXct(time_stamp, format="%Y-%m-%d %H:%M:%S"), -->
+<!--          pa_date = as.Date(time_stamp)) -->
+
+<!-- wildfires_purpleair_dates <- wildfires_purpleair_dates %>% -->
+<!--   mutate(pa_date = as.Date(pa_date)) -->
+
+<!-- weather_pa_data <- weather_pa_data %>% -->
+<!--   mutate(timestamp = as.POSIXct(timestamp, format="%Y-%m-%d %H:%M:%S")) -->
+
+<!-- # Step 2: Join wildfires data with purpleair data -->
+<!-- combined_data <- purpleair_data %>% -->
+<!--   left_join(wildfires_purpleair_dates, by = c("sensor_index", "pa_date")) -->
+
+<!-- # Step 3: Join weather data with combined data on sensor_index and hourly timestamp -->
+<!-- combined_data <- combined_data %>% -->
+<!--   left_join(weather_pa_data, by = c("sensor_index", "time_stamp" = "timestamp")) -->
+<!-- ``` -->
+
+
+```{r}
+library(data.table)
+library(lubridate)
+```
+
+
+```{r}
+# Load datasets as data.tables
+purpleair_data <- fread(file.path("data", "processed", "purpleair_processed.csv"))
+wildfires_purpleair_dates <- fread(file.path("data", "processed", "wildfires_purpleair_dates.csv"))
+weather_data <- fread(file.path("data", "raw", "weather.csv"))[, .(station, timestamp, temp_fahrenheit, rel_humidity, wind_direction, wind_speed)]
+weather_pa <- fread(file.path("data", "processed", "weatherstations_purpleair.csv"))[, .(sensor_index, station, station_distance)]
+
+# # Add lag features directly in `purpleair_data`
+# setorder(purpleair_data, sensor_index, time_stamp)
+# purpleair_data[, `:=`(
+#   pm2.5_alt_lag1 = shift(pm2.5_alt, 1, type = "lag"),
+#   pm2.5_alt_lag6 = shift(pm2.5_alt, 6, type = "lag"),
+#   pm2.5_alt_lag12 = shift(pm2.5_alt, 12, type = "lag"),
+#   pm2.5_alt_lag24 = shift(pm2.5_alt, 24, type = "lag")
+# ), by = sensor_index]
+
+# Prepare time columns for compatibility in joins
+purpleair_data[, `:=`(time_stamp = as.POSIXct(time_stamp, format = "%Y-%m-%d %H:%M:%S"),
+                      pa_date = as.Date(time_stamp))]
+wildfires_purpleair_dates[, pa_date := as.Date(pa_date)]
+weather_data[, timestamp := as.POSIXct(timestamp, format = "%Y-%m-%d %H:%M:%S")]
+```
+
+
+```{r}
+# Join weather data to include the relevant stations
+weather_pa_data <- merge(weather_data, weather_pa, by = "station", all.x = TRUE, allow.cartesian = TRUE)
+```
+
+
+```{r}
+# Join wildfires data with purpleair_data
+combined_data <- merge(purpleair_data, wildfires_purpleair_dates, by = c("sensor_index", "pa_date"), all.x = TRUE)
+```
+
+
+```{r}
+# Join weather data with combined_data based on sensor_index and timestamp
+combined_data <- merge(combined_data, weather_pa_data, by.x = c("sensor_index", "time_stamp"), by.y = c("sensor_index", "timestamp"), all.x = TRUE)
 ```
 
 ```{r}
-# Convert weather data frame to an sf object
-weather_sf <- st_as_sf(weather, coords=c("lon", "lat"), crs = crs)
+combined_data <- combined_data %>% select(-fire_id, -location_type_mode, -station, -pa_date, -sensor_index)
+
+setDT(combined_data)
+
+# logical to binary
+combined_data[, after_containment := as.integer(after_containment)]
+
+# Fill NAs with -1 for fire columns
+combined_data[, `:=`(
+  fire_day = ifelse(is.na(fire_day), -1, fire_day),
+  fire_distance = ifelse(is.na(fire_distance), -1, fire_distance),
+  fire_direction = ifelse(is.na(fire_direction), -1, fire_direction),
+  GIS_ACRES = ifelse(is.na(GIS_ACRES), -1, GIS_ACRES),
+  after_containment = ifelse(is.na(after_containment), -1, as.integer(after_containment))
+)]
+
+# Scale `station_distance` to range [0, 1]
+combined_data[, station_distance := (station_distance - min(station_distance, na.rm = TRUE)) /
+                                    (max(station_distance, na.rm = TRUE) - min(station_distance, na.rm = TRUE))]
+```
+
+
+```{r}
+# na_summary <- combined_data[, lapply(.SD, function(x) sum(is.na(x)))]
+# print(na_summary)
+
+na_percentage <- combined_data[, lapply(.SD, function(x) round(mean(is.na(x)) * 100))]
+na_percentage <- melt(na_percentage, variable.name = "Column", value.name = "NA_Percentage")
+print(na_percentage)
+
+
+combined_data %>% filter(is.na(station)) %>% select(sensor_index) %>% distinct()
+
+combined_data[, .(
+  total_rows = .N,  # Total count of rows per sensor_index
+  na_station_count = round(sum(is.na(station)/.N),2)  # Count of rows with NA in station
+), by = sensor_index] %>% arrange(desc(na_station_count))
+```
+
+```{r}
+# Calculate and view NA percentages for each column
+na_percentage <- combined_data[, lapply(.SD, function(x) mean(is.na(x)) * 100)]
+print(na_percentage)
+```
+
+```{r}
+# Remove rows with any NA values
+combined_data <- combined_data %>% drop_na()
+```
+
+
+```{r}
+# Step 4: Save the integrated data
+write.csv(combined_data, file = file.path("data", "processed", "integrated_dataset.csv"), row.names = FALSE)
 ```
 
 
 
-# Join PurpleAir Uber Temp OSM
-```{r Join PurpleAir Uber Temp OSM}
-# purpleair_uber_roads - "osm_id","name","type","sensr_d","dt_crtd","last_sn","geometry"
-# road_congestion_hourly - "osm_way_id","utc_timestamp","congestion_ratio_mean"
-# purpleair_road_length - "sensr_d","type","road_length","geometry"   
-# purpleair_building_areas - "sensr_d","type","total_area","geometry"  
-# purpleair - "time_stamp","pm1.0_atm","pm2.5_atm","pm2.5_atm_a","pm2.5_atm_b","sensor_id"
-# temps - "datetime","TemperatureFahrenheit","TemperatureCelsius"   
-
-purpleair2 <- purpleair %>% select(time_stamp,sensor_id,pm2.5_atm)
-temps2 <- temps %>% select(datetime,TemperatureFahrenheit)
-purpleair_building_areas2 <- st_drop_geometry(purpleair_building_areas) %>% select(sensr_d,type,total_area)
-purpleair_road_length2 <- st_drop_geometry(purpleair_road_length) %>% select(sensr_d,type,road_length = rd_lngt)
-# road_congestion_hourly # osm_way_id, utc_timestamp, congestion_ratio_mean
-purpleair_uber <- st_drop_geometry(purpleair_uber_roads) %>% select(sensr_d,osm_id)
-
-# pivot area by building type
-# purpleair_building_areas %>%
-#   group_by(sensr_d, type) %>%
-#   summarize(total_area = sum(total_area)) %>%
-#   pivot_wider(names_from = type, values_from = total_area, names_prefix = "area_")
-
-purpleair_building_areas3 <- purpleair_building_areas2 %>%
-  group_by(sensr_d) %>%
-  summarize(total_area = sum(total_area)) %>% ungroup()
-
-# pivot length by road type
-purpleair_road_length3 <- purpleair_road_length2 %>%
-  group_by(sensr_d, type) %>%
-  summarize(road_length = sum(road_length)) %>%
-  pivot_wider(names_from = type, values_from = road_length, names_prefix = "length_") %>% ungroup()
-
-purpleair_road_length4 <- purpleair_road_length2 %>%
-  group_by(sensr_d) %>%
-  summarize(road_length = sum(road_length)) %>% ungroup()
-
-pa_temp <- left_join(purpleair, temps, by = c("time_stamp" = "datetime"))
-pa_congestion <- left_join(purpleair_uber, road_congestion_hourly, by = c("osm_id" = "osm_way_id"))
-
-# check how i calculate this
-# alternative to getting the mean of mean
-pa_congestion <- pa_congestion %>% group_by(sensr_d, utc_timestamp) %>% summarize(mean_congestion = mean(congestion_ratio_mean)) %>% ungroup()
-
-result <- left_join(pa_temp, pa_congestion, by = c("time_stamp" = "utc_timestamp", "sensor_id" = "sensr_d"))
-result <- left_join(result, purpleair_building_areas3, by = c("sensor_id" = "sensr_d"))
-result <- left_join(result, purpleair_road_length3, by = c("sensor_id" = "sensr_d"))
-
-# head(result, 10)
-
-```
 
 
-# Analyze missing values
-```{r Analyze missing values}
-
-all_na_columns <- names(result)[colSums(is.na(result)) == nrow(result)]
-cat("columns with all NA:\n",all_na_columns)
-result <- result %>% dplyr::select(-all_of(all_na_columns))
-
-missing_count <- colSums(is.na(result))
-non_missing_count <- colSums(!is.na(result))
-
-data_quality_summary <- data.frame(
-  Column = colnames(result),
-  Status = factor(rep(c("Missing", "Non-Missing"), each = ncol(result))),
-  Count = c(missing_count, non_missing_count)
-)
-
-ggplot(data_quality_summary, aes(x = Column, fill = Status, y = Count)) +
-  geom_bar(stat = "identity", position = "stack") +
-  xlab("Column") +
-  ylab("Count") +
-  scale_fill_manual(values = c("Missing" = "red", "Non-Missing" = "green")) +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
-
-```
-# Handle Missing Values
-```{r Handle Missing Values}
-# Since most missing values are lengths of roads
-# Fill missing "length" values with 0
-
-# column names starting with length
-cols_to_fill_na <- grep("^length_", names(result), value = TRUE)
-
-# Replace NA with 0 in selected columns
-result <- result %>%
-  mutate_at(vars(all_of(cols_to_fill_na)), ~replace_na(., 0))
-
-# replace missing mean_congestion with 1 (no traffic)
-result <- result %>%
-  mutate_at(vars(mean_congestion), ~replace_na(., 1))
-```
-
-# Number of purple air sensors
-``` {r}
-unique_sensor_count <- result %>%
-  select(sensor_id) %>%
-  distinct() %>%
-  n_distinct()
-
-cat("Number of PurpleAir sensors: ",unique_sensor_count)
-```
-
-```{}
-osm_uber_sf <- sanfrangrid_roads[sanfrangrid_roads$osm_id %in% unique(uber_data$osm_way_id), ]
-rm(sanfrangrid_roads)
-osm_uber_roads <- merge(osm_uber_sf, uber_data, by.x = "osm_id", by.y = "osm_way_id", all.x = TRUE)
-rm(uber_data)
-```
-
-```{r, eval=FALSE}
-# Plot purple airs map
-map_sf <- mapview(purpleair_sf, col.regions = "purple", col = "purple", cex = 0.1, legend = FALSE)
-
-# Add uber layer
-map_sf <- map_sf + mapview(osm_uber_sf, col.regions="lightblue", col="lightblue")
-
-# View map
-map_sf
-
-# Save map as html
-mapshot(map_sf, url = '/Users/heba/Desktop/Uni/Lim Lab/uber_purpleair/map_sf.html')
-```
-
-# Converting timestamps to a date-time format
-```{ timestamps format}
-uber_data$utc_timestamp <- ymd_hms(uber_data$utc_timestamp)
-purpleair$time_stamp <- ymd_hms(purpleair$time_stamp)
-```
+#######################################################################################################################################
 
 
-# Maps (Select Relevant Layers)
-```{r buildings map}
-purpleair_buildings <- purpleair_buildings %>%
-  mutate(building_type = type) %>%
-  select(-type) %>% 
-  mutate(building_type = coalesce(building_type, 'NA'))
 
-purpleair_uber_roads <- purpleair_uber_roads %>%
-  mutate(road_type = type) %>%
-  select(-type) %>%
-  mutate(road_type = coalesce(road_type, 'NA'))
 
-pa_sensors <- purpleairs_sf %>% select(sensr_d)
 
-palette1 <- colorRampPalette(c("pink"))
-palette2 <- colorRampPalette(c("lightgrey"))
-palette3 <- colorRampPalette(c("red", "green"))
 
-# Create maps with custom color palettes
-map1 <- mapview(purpleair_buildings)
-map2 <- mapview(purpleair_uber_roads, zcol = "road_type", col.regions = palette2,col = palette2)
-map3 <- mapview(speed_map, zcol = "free_flow_speed", col.regions = palette3, col = palette3)
-map4 <- mapview(pa_sensors, col.regions = "purple", legend = FALSE)
 
-# Combine the maps
-combined_map <- map1 + map2 + map3 + map4
 
-combined_map
-```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!-- ## Read files -->
+<!-- ```{r, read-files, eval=FALSE} -->
+<!-- purpleair_fires <- fread(file.path("data", "processed", "wildfires_purpleair_dates.csv")) %>% select(-fire_id) -->
+
+<!-- purpleair_data <- read.csv(file.path("data", "raw", "purpleair_2018-01-01_2019-12-31.csv")) -->
+
+<!-- purpleair_sensors <- st_read(paste0(purpleair_directory, "/purpleair_sensors.gpkg"), quiet = TRUE) -->
+<!-- osm_roads <- st_read(paste0(osm_directory, "/sanfrangrid_roads_osm.gpkg"), quiet = TRUE) -->
+<!-- ``` -->
+
+<!-- ```{r} -->
+<!-- # Convert weather data frame to an sf object -->
+<!-- weather_sf <- st_as_sf(weather, coords=c("lon", "lat"), crs = crs) -->
+<!-- ``` -->
+
+
+
+<!-- # Join PurpleAir Uber Temp OSM -->
+<!-- ```{r Join PurpleAir Uber Temp OSM} -->
+<!-- # purpleair_uber_roads - "osm_id","name","type","sensr_d","dt_crtd","last_sn","geometry" -->
+<!-- # road_congestion_hourly - "osm_way_id","utc_timestamp","congestion_ratio_mean" -->
+<!-- # purpleair_road_length - "sensr_d","type","road_length","geometry"    -->
+<!-- # purpleair_building_areas - "sensr_d","type","total_area","geometry"   -->
+<!-- # purpleair - "time_stamp","pm1.0_atm","pm2.5_atm","pm2.5_atm_a","pm2.5_atm_b","sensor_id" -->
+<!-- # temps - "datetime","TemperatureFahrenheit","TemperatureCelsius"    -->
+
+<!-- purpleair2 <- purpleair %>% select(time_stamp,sensor_id,pm2.5_atm) -->
+<!-- temps2 <- temps %>% select(datetime,TemperatureFahrenheit) -->
+<!-- purpleair_building_areas2 <- st_drop_geometry(purpleair_building_areas) %>% select(sensr_d,type,total_area) -->
+<!-- purpleair_road_length2 <- st_drop_geometry(purpleair_road_length) %>% select(sensr_d,type,road_length = rd_lngt) -->
+<!-- # road_congestion_hourly # osm_way_id, utc_timestamp, congestion_ratio_mean -->
+<!-- purpleair_uber <- st_drop_geometry(purpleair_uber_roads) %>% select(sensr_d,osm_id) -->
+
+<!-- # pivot area by building type -->
+<!-- # purpleair_building_areas %>% -->
+<!-- #   group_by(sensr_d, type) %>% -->
+<!-- #   summarize(total_area = sum(total_area)) %>% -->
+<!-- #   pivot_wider(names_from = type, values_from = total_area, names_prefix = "area_") -->
+
+<!-- purpleair_building_areas3 <- purpleair_building_areas2 %>% -->
+<!--   group_by(sensr_d) %>% -->
+<!--   summarize(total_area = sum(total_area)) %>% ungroup() -->
+
+<!-- # pivot length by road type -->
+<!-- purpleair_road_length3 <- purpleair_road_length2 %>% -->
+<!--   group_by(sensr_d, type) %>% -->
+<!--   summarize(road_length = sum(road_length)) %>% -->
+<!--   pivot_wider(names_from = type, values_from = road_length, names_prefix = "length_") %>% ungroup() -->
+
+<!-- purpleair_road_length4 <- purpleair_road_length2 %>% -->
+<!--   group_by(sensr_d) %>% -->
+<!--   summarize(road_length = sum(road_length)) %>% ungroup() -->
+
+<!-- pa_temp <- left_join(purpleair, temps, by = c("time_stamp" = "datetime")) -->
+<!-- pa_congestion <- left_join(purpleair_uber, road_congestion_hourly, by = c("osm_id" = "osm_way_id")) -->
+
+<!-- # check how i calculate this -->
+<!-- # alternative to getting the mean of mean -->
+<!-- pa_congestion <- pa_congestion %>% group_by(sensr_d, utc_timestamp) %>% summarize(mean_congestion = mean(congestion_ratio_mean)) %>% ungroup() -->
+
+<!-- result <- left_join(pa_temp, pa_congestion, by = c("time_stamp" = "utc_timestamp", "sensor_id" = "sensr_d")) -->
+<!-- result <- left_join(result, purpleair_building_areas3, by = c("sensor_id" = "sensr_d")) -->
+<!-- result <- left_join(result, purpleair_road_length3, by = c("sensor_id" = "sensr_d")) -->
+
+<!-- # head(result, 10) -->
+
+<!-- ``` -->
+
+
+<!-- # Analyze missing values -->
+<!-- ```{r Analyze missing values} -->
+
+<!-- all_na_columns <- names(result)[colSums(is.na(result)) == nrow(result)] -->
+<!-- cat("columns with all NA:\n",all_na_columns) -->
+<!-- result <- result %>% dplyr::select(-all_of(all_na_columns)) -->
+
+<!-- missing_count <- colSums(is.na(result)) -->
+<!-- non_missing_count <- colSums(!is.na(result)) -->
+
+<!-- data_quality_summary <- data.frame( -->
+<!--   Column = colnames(result), -->
+<!--   Status = factor(rep(c("Missing", "Non-Missing"), each = ncol(result))), -->
+<!--   Count = c(missing_count, non_missing_count) -->
+<!-- ) -->
+
+<!-- ggplot(data_quality_summary, aes(x = Column, fill = Status, y = Count)) + -->
+<!--   geom_bar(stat = "identity", position = "stack") + -->
+<!--   xlab("Column") + -->
+<!--   ylab("Count") + -->
+<!--   scale_fill_manual(values = c("Missing" = "red", "Non-Missing" = "green")) + -->
+<!--   theme(axis.text.x = element_text(angle = 45, hjust = 1)) -->
+
+<!-- ``` -->
+<!-- # Handle Missing Values -->
+<!-- ```{r Handle Missing Values} -->
+<!-- # Since most missing values are lengths of roads -->
+<!-- # Fill missing "length" values with 0 -->
+
+<!-- # column names starting with length -->
+<!-- cols_to_fill_na <- grep("^length_", names(result), value = TRUE) -->
+
+<!-- # Replace NA with 0 in selected columns -->
+<!-- result <- result %>% -->
+<!--   mutate_at(vars(all_of(cols_to_fill_na)), ~replace_na(., 0)) -->
+
+<!-- # replace missing mean_congestion with 1 (no traffic) -->
+<!-- result <- result %>% -->
+<!--   mutate_at(vars(mean_congestion), ~replace_na(., 1)) -->
+<!-- ``` -->
+
+<!-- # Number of purple air sensors -->
+<!-- ``` {r} -->
+<!-- unique_sensor_count <- result %>% -->
+<!--   select(sensor_id) %>% -->
+<!--   distinct() %>% -->
+<!--   n_distinct() -->
+
+<!-- cat("Number of PurpleAir sensors: ",unique_sensor_count) -->
+<!-- ``` -->
+
+<!-- ```{} -->
+<!-- osm_uber_sf <- sanfrangrid_roads[sanfrangrid_roads$osm_id %in% unique(uber_data$osm_way_id), ] -->
+<!-- rm(sanfrangrid_roads) -->
+<!-- osm_uber_roads <- merge(osm_uber_sf, uber_data, by.x = "osm_id", by.y = "osm_way_id", all.x = TRUE) -->
+<!-- rm(uber_data) -->
+<!-- ``` -->
+
+<!-- ```{r, eval=FALSE} -->
+<!-- # Plot purple airs map -->
+<!-- map_sf <- mapview(purpleair_sf, col.regions = "purple", col = "purple", cex = 0.1, legend = FALSE) -->
+
+<!-- # Add uber layer -->
+<!-- map_sf <- map_sf + mapview(osm_uber_sf, col.regions="lightblue", col="lightblue") -->
+
+<!-- # View map -->
+<!-- map_sf -->
+
+<!-- # Save map as html -->
+<!-- mapshot(map_sf, url = '/Users/heba/Desktop/Uni/Lim Lab/uber_purpleair/map_sf.html') -->
+<!-- ``` -->
+
+<!-- # Converting timestamps to a date-time format -->
+<!-- ```{ timestamps format} -->
+<!-- uber_data$utc_timestamp <- ymd_hms(uber_data$utc_timestamp) -->
+<!-- purpleair$time_stamp <- ymd_hms(purpleair$time_stamp) -->
+<!-- ``` -->
+
+
+<!-- # Maps (Select Relevant Layers) -->
+<!-- ```{r buildings map} -->
+<!-- purpleair_buildings <- purpleair_buildings %>% -->
+<!--   mutate(building_type = type) %>% -->
+<!--   select(-type) %>%  -->
+<!--   mutate(building_type = coalesce(building_type, 'NA')) -->
+
+<!-- purpleair_uber_roads <- purpleair_uber_roads %>% -->
+<!--   mutate(road_type = type) %>% -->
+<!--   select(-type) %>% -->
+<!--   mutate(road_type = coalesce(road_type, 'NA')) -->
+
+<!-- pa_sensors <- purpleairs_sf %>% select(sensr_d) -->
+
+<!-- palette1 <- colorRampPalette(c("pink")) -->
+<!-- palette2 <- colorRampPalette(c("lightgrey")) -->
+<!-- palette3 <- colorRampPalette(c("red", "green")) -->
+
+<!-- # Create maps with custom color palettes -->
+<!-- map1 <- mapview(purpleair_buildings) -->
+<!-- map2 <- mapview(purpleair_uber_roads, zcol = "road_type", col.regions = palette2,col = palette2) -->
+<!-- map3 <- mapview(speed_map, zcol = "free_flow_speed", col.regions = palette3, col = palette3) -->
+<!-- map4 <- mapview(pa_sensors, col.regions = "purple", legend = FALSE) -->
+
+<!-- # Combine the maps -->
+<!-- combined_map <- map1 + map2 + map3 + map4 -->
+
+<!-- combined_map -->
+<!-- ``` -->

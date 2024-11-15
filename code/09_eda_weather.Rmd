@@ -21,8 +21,7 @@ library(DataOverviewR) # Data dictionary and summary
 ```
 
 ```{r, read-weather-csv, echo = FALSE}
-filepath <- file.path("data", "raw", "weather.csv")
-weather_data <- read.csv(filepath)
+weather_data <- read.csv(file.path("data", "raw", "weather.csv"))
 ```
 
 ---

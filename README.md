@@ -1,41 +1,101 @@
-# AirQualitySF
+# Air Quality Analysis and Prediction in the Bay Area
 
-## Overview
+## Project Overview
 
 The primary objective of the project is to develop a robust predictive model for PM2.5 concentrations in the Bay Area.
 
-To achieve this goal, the project integrates and analyzes diverse datasets sourced from PurpleAir, OpenStreetMap (OSM), Uber speeds, and weather stations.
+To achieve this, the project integrates and analyzes diverse datasets, including PurpleAir sensor data, OpenStreetMap (OSM) data, wildfire data, AQS measurements, Uber speed data, and weather station readings.
 
-## Contents
+The workflow is structured into distinct stages: data collection and preprocessing, exploratory data analysis, data integration, feature engineering, and modeling.
 
--   [01_purpleair_data](docs/01_purpleair_data.md): Download PurpleAir hourly PM2.5 data for 2018-2019 in the Bay Area.
+---
 
--   [02_aqs_data](docs/02_aqs_data.md): Download US Environmental Protection Agency: Air Quality System (AQS) data for 2018-2019 in the bay area.
+## Project Workflow
 
--   [03_weather_data](docs/03_weather_data.md): Retrieve weather station data for environmental context.
+### Data Collection and Preprocessing
 
--   [04_wildfire_data](docs/04_wildfire_data.md): Wildfire data, proximity calculations for each PurpleAir sensor.
+1. **`01_purpleair_data.Rmd`**:
+   - Collects and preprocesses the PurpleAir sensor data.
 
--   [05_osm_data](docs/05_osm_data.md): Download OpenStreetMap (OSM) data for spatial features around sensor locations.
+2. **`02_aqs_data.Rmd`**:
+   - Collects and preprocesses the AQS data.
 
--   [06_uber_data](docs/06_uber_data.md): Uber speeds data integration with sensor locations.
+3. **`03_weather_data.Rmd`**:
+   - Collects and preprocesses the weather data.
 
--   [07_eda_purpleair](docs/07_eda_purpleair.md): Exploratory data analysis (EDA) and visualizations for PurpleAir data.
+4. **`04_wildfire_data.Rmd`**:
+   - Collects and preprocesses the wildfire data.
 
--   [08_eda_aqs](docs/08_eda_aqs.md): EDA for AQS data, analyzing trends and distributions.
+5. **`05_osm_data.Rmd`**:
+   - Collects and preprocesses the OpenStreetMap (OSM) data.
 
--   [09_eda_weather](docs/09_eda_weather.md): EDA for weather station data, analyzing temperature, humidity patterns, etc.
+### Exploratory Data Analysis
 
--   [10_eda_wildfire](docs/10_eda_wildfire.md): EDA for wildfire data, investigating fire patterns and proximity to sensors.
+6. **`07_eda_purpleair.Rmd`**:
+   - Explores and visualizes the PurpleAir data.
 
--   [11_eda_osm](docs/11_eda_osm.md): EDA for spatial data from OSM, analyzing surrounding land use and road features.
+7. **`08_eda_aqs.Rmd`**:
+   - Explores and visualizes the AQS data.
 
--   [12_eda_uber](docs/12_eda_uber.md): EDA for Uber speeds data, looking at traffic trends and their impact on air quality.
+8. **`09_eda_weather.Rmd`**:
+   - Explores and visualizes the weather data.
 
--   [13_data_integration](docs/13_data_integration.md): Integrate data sources to final dataset.
+9. **`10_eda_wildfire.Rmd`**:
+   - Explores and visualizes the wildfire data.
 
--   [00_feature_engineering](docs/00_feature_engineering.md): Create new features for predictive modeling.
+10. **`11_eda_osm.Rmd`**:
+    - Explores and visualizes the OSM data.
 
--   [00_modeling](docs/00_modeling.md): Build and evaluate the predictive model for PM2.5.
+### Data Integration
 
--   [00_](docs/00_.md): Details.
+11. **`13_data_integration.Rmd`**:
+    - Integrates the various data sources into a single dataset.
+
+### Feature Engineering
+
+12. **`12_feature_engineering.Rmd`**:
+    - Creates new features from the integrated dataset.
+
+### Modeling
+
+13. **`13_linear_regression.Rmd`**:
+    - Develops a linear regression model.
+
+14. **`14_tree_based_models.Rmd`**:
+    - Develops tree-based models (Random Forest, XGBoost).
+
+15. **`15_ensemble_methods.Rmd`**:
+    - Develops ensemble models (stacking, blending).
+
+---
+
+## How to Use
+
+1. Clone the repository to your local machine.
+2. Install the required R packages listed in the `DESCRIPTION` or `requirements.txt` file.
+3. Run each `.Rmd` file in sequence to reproduce the workflow.
+
+---
+
+## Data Sources
+
+This project uses data from the PurpleAir API. Here are some useful resources for understanding the PurpleAir data:
+
+- [PurpleAir API Documentation](https://api.purpleair.com/)
+- [Sensor Fields](https://api.purpleair.com/#api-sensors-get-sensor-data)
+- [Field Descriptions](https://community.purpleair.com/t/api-history-fields-descriptions/4652)
+
+## Spatial Data
+
+This project uses spatial data with the following Coordinate Reference Systems (CRS):
+
+- CRS 4326: WGS 84 (latitude/longitude in degrees, global standard for GPS)
+- CRS 3310: NAD83 / California Albers (projected in meters, used for California)
+
+## Setup
+
+Before running the R Markdown documents, please make sure to install the required packages by running the `setup.R` script. Open an R console and navigate to the project directory, then run the following command:
+
+```r
+source("setup.R")
+```

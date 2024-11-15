@@ -33,16 +33,13 @@ library(timeDate)      # holidays
 ```
 
 ```{r, read-purpleair-csv, echo = FALSE, results = "hide", message = FALSE}
-filename <- paste0("purpleair_2018-01-01_2019-12-31.csv")
-filepath <- file.path("data", "raw", filename)
-
 # Read purple air data
-purpleair_data <- data.frame(fread(filepath))
+purpleair_data <- fread(file.path("data", "raw", "purpleair_2018-01-01_2019-12-31.csv")) %>% distinct()
 purpleair_data <- purpleair_data %>% 
   select(time_stamp, rssi, uptime, memory, humidity, temperature, pressure,
          analog_input, pm2.5_alt, pm2.5_alt_a, pm2.5_alt_b, sensor_index, location_type)
 
-aqs_data <- read.csv(file.path("data", "raw", "EPA_airquality.csv"))
+aqs_data <- fread(file.path("data", "raw", "EPA_airquality.csv"))
 
 total_rows <- nrow(purpleair_data)
 ```
@@ -211,11 +208,12 @@ ALT: Channel A vs B
 img_path <- file.path("../docs", "plots", "purpleair_alt_avsb.png")
 
 if (!file.exists(img_path)) {
-  purpleair_data$pm2.5_alt_a[is.na(purpleair_data$pm2.5_alt_a)] <- -1
-  purpleair_data$pm2.5_alt_b[is.na(purpleair_data$pm2.5_alt_b)] <- -1
-  purpleair_data$missing <- ifelse(purpleair_data$pm2.5_alt_a == -1 | purpleair_data$pm2.5_alt_b == -1, "Missing", "Valid")
+  purpleair_temp <- copy(purpleair_data) 
+  purpleair_temp$pm2.5_alt_a[is.na(purpleair_temp$pm2.5_alt_a)] <- -1
+  purpleair_temp$pm2.5_alt_b[is.na(purpleair_temp$pm2.5_alt_b)] <- -1
+  purpleair_temp$missingchannel <- ifelse(purpleair_temp$pm2.5_alt_a == -1 | purpleair_temp$pm2.5_alt_b == -1, "Missing", "Valid")
   
-  p <- ggplot(purpleair_data, aes(x = pm2.5_alt_a, y = pm2.5_alt_b, color = missing)) +
+  p <- ggplot(purpleair_temp, aes(x = pm2.5_alt_a, y = pm2.5_alt_b, color = missingchannel)) +
     geom_point() +
     scale_color_manual(values = c("Valid" = "black", "Missing" = "red"), name = NULL) +
     labs(x = "Channel A PM2.5 (µg/m³)",
@@ -283,199 +281,243 @@ if (!file.exists(img_path)) {
 knitr::include_graphics(img_path)
 ```
 
-```{r}
+## Remove sensor 20349 (code commented below)
+```{r, remove-sensor}
+purpleair_data <- purpleair_data %>%
+  filter(sensor_index != 20349)
+```
 
+# remove sensors with too little readings
+
+```{r}
+timestamp_rows <- purpleair_data %>% select(time_stamp) %>% unique() %>% count() %>% pull()
+
+sensor_counts <- purpleair_data %>%
+  group_by(sensor_index) %>%
+  summarise(p = round(n()/timestamp_rows,2),
+            counts = n()) %>% arrange(desc(p))
+
+# View the results
+print(sensor_counts)
+
+keep_sensors <- sensor_counts %>% filter(counts > 1500) %>% pull(sensor_index)
+purpleair_data <- purpleair_data %>% filter(sensor_index %in% keep_sensors)
 ```
 
 
-<!-- purpleair_data$outlier_flag <- ifelse(abs(pm2.5_alt_a - pm2.5_alt_b) / pm2.5_alt > threshold | is.na(pm2.5_alt_a) | is.na(pm2.5_alt_b), 1, 0) -->
+## Complete time series within each sensor date range
+
+```{r}
+# Step 1: Find the start and end time for each sensor
+sensor_periods <- purpleair_data[, .(start_time = min(time_stamp, na.rm = TRUE), 
+                                     end_time = max(time_stamp, na.rm = TRUE)), 
+                                 by = sensor_index]
+
+# Step 2: Create a full sequence of timestamps within the active range for each sensor
+all_timestamps <- sensor_periods[, .(
+  time_stamp = seq(from = start_time, to = end_time, by = "hour")
+), by = sensor_index]
+
+# Step 3: Perform a left join to include all timestamps within the active range, keeping existing data
+purpleair_complete <- merge(all_timestamps, purpleair_data, by = c("sensor_index", "time_stamp"), all.x = TRUE)
+```
+
+```{r}
+# Step 3: Calculate and view NA percentages for each column to verify imputation
+na_percentage <- purpleair_complete[, lapply(.SD, function(x) round(mean(is.na(x)) * 100))]
+na_percentage <- melt(na_percentage, variable.name = "Column", value.name = "NA_Percentage")
+print(na_percentage)
+```
+
+```{r}
+setDT(purpleair_complete)  # Ensure it’s a data.table
+
+# Most frequent value (Mode)
+Mode <- function(x) {
+  ux <- unique(x[!is.na(x)])  # Exclude NA values
+  ux[which.max(tabulate(match(x, ux)))]
+}
+
+location_type_modes <- purpleair_complete[, .(location_type_mode = Mode(location_type)), by = sensor_index]
+# Join the mode values back into `purpleair_complete` using a left join
+purpleair_complete_temp <- merge(purpleair_complete, location_type_modes, by = "sensor_index", all.x = TRUE)
+
+# Use coalesce to fill `location_type` with `location_type_mode` where it's missing
+purpleair_complete_temp[, location_type := coalesce(location_type, location_type_mode)]
+```
+
+```{r}
+# check location type doesnt have NAs after filling with mode
+na_percentage <- purpleair_complete_temp[, lapply(.SD, function(x) round(mean(is.na(x)) * 100))]
+na_percentage <- melt(na_percentage, variable.name = "Column", value.name = "NA_Percentage")
+print(na_percentage)
+```
+
+```{r}
+# Step 1: Convert time-related features and handle `location_type` imputation
+purpleair_processed_dates <- purpleair_complete_temp %>%
+  group_by(sensor_index) %>%
+  mutate(
+    time_stamp = lubridate::as_datetime(time_stamp),
+    local_timestamp = with_tz(time_stamp, tzone = "America/Los_Angeles"),
+    local_date = as.Date(local_timestamp, tz = "America/Los_Angeles"),
+    dow = lubridate::wday(local_timestamp),
+    hour = lubridate::hour(local_timestamp),
+    day = lubridate::day(local_timestamp),
+    month = lubridate::month(local_timestamp),
+    year = lubridate::year(local_timestamp),
+    holiday = ifelse(local_date %in% holidays, 1, 0),
+  ) %>%
+  ungroup() %>%
+  select(-pm2.5_alt_a, -pm2.5_alt_b, -local_timestamp, -local_date)
+```
+
+```{r}
+setDT(purpleair_processed_dates)  # Ensure it’s a data.table
+
+# List of columns to impute
+cols_to_impute <- c("pm2.5_alt", "pressure", "analog_input", "location_type", "temperature", "humidity", "memory", "uptime", "rssi")
+
+# Step 1: Fill within each sensor using forward fill, backward fill, and mean within each group
+purpleair_processed <- purpleair_processed_dates[, (cols_to_impute) := lapply(.SD, function(x) {
+    x <- na.locf(x, na.rm = FALSE)               # Forward fill
+    x <- na.locf(x, fromLast = TRUE, na.rm = FALSE) # Backward fill
+    x[is.na(x)] <- mean(x, na.rm = TRUE)         # Mean within each sensor
+    return(x)
+  }), by = sensor_index, .SDcols = cols_to_impute]
+
+# Step 2: For any remaining NA values, fill with the global mean across all sensors
+purpleair_processed[, (cols_to_impute) := lapply(.SD, function(x) {
+    x[is.na(x)] <- mean(x, na.rm = TRUE)         # Global mean imputation
+    return(x)
+  }), .SDcols = cols_to_impute]
+
+# Check NA percentages after imputation
+na_percentage <- purpleair_processed[, lapply(.SD, function(x) mean(is.na(x)) * 100)]
+print(na_percentage)
+```
+```{r}
+# Ensure `purpleair_complete` is a data.table
+setDT(purpleair_processed)
+
+# Add lagged columns for pm2.5_alt at 6, 12, and 24-hour intervals, grouped by sensor_index
+purpleair_processed_lags <- purpleair_processed[
+  order(sensor_index, time_stamp),  # Ensure correct order for lag calculation
+  `:=`(
+    pm2.5_alt_lag1 = shift(pm2.5_alt, n = 1, type = "lag"),
+    pm2.5_alt_lag6 = shift(pm2.5_alt, n = 6, type = "lag"),
+    pm2.5_alt_lag12 = shift(pm2.5_alt, n = 12, type = "lag"),
+    pm2.5_alt_lag24 = shift(pm2.5_alt, n = 24, type = "lag")
+  ),
+  by = sensor_index  # Apply within each sensor group
+]
+
+purpleair_final <- purpleair_processed_lags[!is.na(pm2.5_alt_lag6) & 
+                                    !is.na(pm2.5_alt_lag12) & 
+                                    !is.na(pm2.5_alt_lag24)]
+```
 
 
-<!-- ## Flag outliers with different thresholds of relative change between channel A and B -->
-<!-- ### Relative Change -->
-<!-- \[ -->
-<!-- \text{Relative Change} = \frac{\lvert \text{Channel A}_{\text{PM2.5}} - \text{Channel B}_{\text{PM2.5}} \rvert}{\text{avg}(\text{Channel A}_{\text{PM2.5}}, \text{Channel B}_{\text{PM2.5}})} -->
-<!-- \] -->
+```{r}
+# Step 4: Save the processed data
+write.csv(purpleair_final, file = file.path("data", "processed", "purpleair_processed_2.csv"), row.names = FALSE)
+```
 
-<!-- ### Minimum *Absolute Difference* between A and B must be greater than 2 -->
-<!-- ```{r, flag-outliers-thres} -->
-<!-- # flag outliers using different thresholds and compare -->
-<!-- # Initialize an empty data frame to store results -->
-<!-- outlier_summary <- data.frame( -->
-<!--   threshold = numeric(0), -->
-<!--   num_outliers = numeric(0), -->
-<!--   percentage = numeric(0) -->
-<!-- ) -->
+```{r}
+library(stats)
+calc_autocorrelation <- function(sensor_data) {
+  acf(sensor_data$pm2.5_alt, plot = FALSE)$acf
+}
 
-<!-- # Set thresholds for PM2.5 relative change  -->
-<!-- # Relative change - Arithmetic mean change	(https://en.wikipedia.org/wiki/Relative_change#Indicators_of_relative_change) -->
-<!-- thresholds <- c(0.1, 0.15, 0.2, 0.25, 0.3, 0.4, 0.5, 0.6) -->
-<!-- for (threshold in thresholds) { -->
-<!--   outliers <- purpleair_data %>% -->
-<!--     mutate(abs_diff = abs(pm2.5_atm_a - pm2.5_atm_b), -->
-<!--            relativechange = round(abs_diff / pm2.5_atm, 2), -->
-<!--            flag = ifelse(flag == "Normal" & relativechange > threshold & abs_diff > 2, -->
-<!--                          "Outlier", flag)) -->
+sensor_autocorrelation <- purpleair_data %>%
+  filter(!is.na(pm2.5_alt)) %>%
+  group_by(sensor_index) %>%
+  do(autocorr = calc_autocorrelation(.)) %>%
+  ungroup()
+```
 
-<!--   # Merge with original data and flag outliers -->
-<!--   pa_outliers <- purpleair_data %>% select(-flag) %>% -->
-<!--     left_join(outliers %>% select(time_stamp, sensor_index, flag, abs_diff, relativechange),  -->
-<!--               by = c("time_stamp", "sensor_index")) %>% -->
-<!--     select(time_stamp, pm2.5_atm_a, pm2.5_atm_b, abs_diff, relativechange, -->
-<!--            flag, everything()) -->
+```{r}
+# Select a sensor to analyze
+sensor_index <- 767
 
-<!--   num_outliers <- pa_outliers %>% filter(flag == "Outlier") %>% nrow() -->
-<!--   percentage <- paste0(round(100 * num_outliers / total_rows, 2),"%") -->
+# Get the PM2.5 data for the selected sensor
+sensor_data <- purpleair_data %>% 
+  filter(sensor_index == 767 & !is.na(pm2.5_alt))
 
-<!--   # Add the results to the data frame -->
-<!--   outlier_summary <- rbind(outlier_summary,  -->
-<!--                            data.frame(threshold = threshold,  -->
-<!--                                       num_outliers = format(num_outliers, big.mark = ","),  -->
-<!--                                       percentage = percentage)) -->
-<!-- } -->
-<!-- ``` -->
+# Calculate the autocorrelation
+autocorr <- calc_autocorrelation(sensor_data)
 
-<!-- ```{r, view-outlier-thres, echo = FALSE} -->
-<!-- knitr::kable(outlier_summary, -->
-<!--              row.names = FALSE, -->
-<!--              format = "markdown", -->
-<!--              col.names = c("Threshold", "Number of Outliers", "Percentage")) %>% -->
-<!--   kable_styling() %>% -->
-<!--   row_spec(1, bold = TRUE, background = "#FFFF99") -->
-<!-- ``` -->
+# Plot the autocorrelation
+plot(autocorr, type = "b", main = paste("Autocorrelation for Sensor", sensor_index))
+```
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+
+# Update the calc_autocorrelation function
+calc_autocorrelation <- function(sensor_data) {
+  acf(sensor_data$pm2.5_alt, plot = FALSE)$acf[1:24]  # Return the first 24 lags
+}
+
+# Calculate autocorrelation for each sensor
+sensor_autocorrelation <- purpleair_data %>%
+  group_by(sensor_index) %>%
+  filter(!is.na(pm2.5_alt)) %>%
+  summarize(autocorr = list(calc_autocorrelation(pick(pm2.5_alt)))) %>%  # Replace cur_data() with pick()
+  ungroup()
+
+# Expand autocorrelation into long format
+sensor_autocorrelation_long <- sensor_autocorrelation %>%
+  unnest(cols = c(autocorr)) %>%
+  group_by(sensor_index) %>%
+  mutate(lag = row_number()) %>%
+  ungroup()
+
+# Summarize autocorrelation across sensors
+autocorr_summary <- sensor_autocorrelation_long %>%
+  group_by(lag) %>%
+  summarize(
+    mean_autocorr = mean(autocorr, na.rm = TRUE),
+    median_autocorr = median(autocorr, na.rm = TRUE)
+  )
+
+# Plot the autocorrelation summary
+ggplot(autocorr_summary, aes(x = lag)) +
+  geom_line(aes(y = mean_autocorr), color = "blue") +
+  geom_line(aes(y = median_autocorr), color = "red") +
+  labs(x = "Lag", y = "Autocorrelation", title = "Summary of Autocorrelation Across Sensors")
+```
+
+	•	Based on the plot, you might include lags 1, 6, 12, and 24, as they represent meaningful intervals (e.g., hourly, 6-hourly, 12-hourly, daily).
 
 
-<!-- ## Plot different thresholds to compare -->
-<!-- ```{r, plot-outliers-thres, echo=FALSE, out.width="49%", out.height="20%", fig.show='hold', fig.align='center'} -->
-<!-- if (FALSE) { -->
-<!--   for (threshold in thresholds) { -->
-<!--     outliers <- purpleair_data %>% -->
-<!--       mutate(abs_diff = abs(pm2.5_atm_a - pm2.5_atm_b), -->
-<!--              relativechange = round(abs_diff / pm2.5_atm, 2), -->
-<!--              flag = ifelse(flag == "Normal" & relativechange > threshold & abs_diff > 2, -->
-<!--                            "Outlier", flag)) -->
 
-<!--     # Merge with original data and flag outliers -->
-<!--     pa_outliers <- purpleair_data %>% select(-flag) %>% -->
-<!--       left_join(outliers %>% select(time_stamp, sensor_index, flag, abs_diff, relativechange),  -->
-<!--                 by = c("time_stamp", "sensor_index")) %>% -->
-<!--       select(time_stamp, pm2.5_atm_a, pm2.5_atm_b, abs_diff, relativechange, -->
-<!--              flag, everything()) -->
-<!--     p <- ggplot(pa_outliers, aes(x = pm2.5_atm_a, y = pm2.5_atm_b, color = flag)) + -->
-<!--       geom_point() + -->
-<!--       scale_color_manual(values = c("Normal" = "black", "Outlier" = "grey", -->
-<!--                                     "Missing" = "red", "PM2.5 > 500" = "orange"), -->
-<!--                          name = "") +  -->
-<!--       labs(x = "Channel A PM2.5", -->
-<!--            y = "Channel B PM2.5", -->
-<!--            color = "Flag", -->
-<!--            title = paste0("Threshold = ", threshold), -->
-<!--            subtitle = paste0("PM2.5 Channel A vs B\n", -->
-<!--                              "Axes limits set to 1000; more data points beyond the limit")) + -->
-<!--       theme_minimal() + -->
-<!--       xlim(-1, 1000) + -->
-<!--       ylim(-1, 1000) -->
-<!--     ggsave(filename = paste0(preprocessing_directory, "/plots/plot_threshold_", threshold, ".png"), -->
-<!--            plot = p, width = 6, height = 4) -->
-<!--   } -->
-<!-- } -->
 
-<!-- # compare plots of different thresholds -->
-<!-- img_paths <- c() -->
-<!-- for (threshold in c(0.1, 0.15, 0.2, 0.25, 0.3, 0.4, 0.5, 0.6)) { -->
-<!--   img_path <- paste0(preprocessing_directory, "/plots/plot_threshold_", threshold, ".png") -->
-<!--   img_paths <- c(img_paths, img_path) -->
-<!-- } -->
 
-<!-- knitr::include_graphics(img_paths) -->
-<!-- ``` -->
-
-<!-- ## Using threshold of 0.1 relative change between channel A and B -->
-<!-- ## And maximum value of PM2.5 500 for channel A and B -->
-<!-- ```{r, flag-outliers} -->
-<!-- # flag outliers using selected threshold -->
-<!-- threshold = 0.1 -->
-<!-- outliers <- purpleair_data %>% -->
-<!--   mutate(abs_diff = abs(pm2.5_atm_a - pm2.5_atm_b), -->
-<!--          relativechange = round(abs_diff / pm2.5_atm, 2), -->
-<!--          flag = ifelse(flag == "Normal" & relativechange > threshold & abs_diff > 2, -->
-<!--                        "Outlier", flag)) -->
-<!-- # Merge with flagged and original data -->
-<!-- pa_outliers <- purpleair_data %>% select(-flag) %>% -->
-<!--   left_join(outliers %>% select(time_stamp, sensor_index, flag, abs_diff, relativechange),  -->
-<!--             by = c("time_stamp", "sensor_index")) %>% -->
-<!--   select(time_stamp, pm2.5_atm_a, pm2.5_atm_b, abs_diff, relativechange, flag, everything()) -->
-
-<!-- outliers %>% select(pm2.5_atm, pm2.5_atm_a, pm2.5_atm_b, abs_diff, relativechange) %>% filter(relativechange < threshold) %>% arrange(desc(abs_diff)) -->
-<!-- ``` -->
-
-<!-- ```{r, include = FALSE} -->
-<!-- # # For checking specific examples -->
-<!-- # options(digits=2) -->
-<!-- #  -->
-<!-- # x <- pa_outliers %>%  filter(!is.na(pm2.5_atm_a), !is.na(pm2.5_atm_b)) %>% -->
-<!-- #     select(time_stamp, pm2.5_atm_a, pm2.5_atm_b, abs_diff, relativechange, outlier, everything()) -->
-<!-- # x %>% filter(outlier==0) %>% slice_sample(n=10) %>% arrange(abs_diff) -->
-<!-- # x %>% filter(outlier==1) %>% slice_sample(n=20) %>% arrange(abs_diff) -->
-<!-- # x %>% sample_n(size=20, fac=pm2.5_atm) %>% arrange(outlier, abs_diff) -->
-<!-- # x %>% sample_n(size=20, fac=relativechange) %>% arrange(outlier, abs_diff) -->
-<!-- # x %>% filter(outlier==0, pm2.5_atm>100, abs_diff>10) %>% slice_sample(n=20) %>% arrange(abs_diff) -->
-<!-- # x %>% filter(outlier==0, pm2.5_atm<150) %>% arrange(desc(abs_diff)) -->
-<!-- ``` -->
-
-<!-- ## Filter out high PM2.5 values (>500), missing channel data, and identified outliers -->
-
-<!-- ```{r, remove-outliers} -->
-<!-- # Remove outliers and keep relevant columns -->
-<!-- pa_filtered <- pa_outliers %>%  -->
-<!--   filter(flag == "Normal") %>% -->
-<!--   select(time_stamp, sensor_index, pm2.5_atm, pm2.5_atm_a, pm2.5_atm_b, -->
-<!--          rssi, uptime, memory, humidity, temperature, pressure, analog_input) -->
-<!-- ``` -->
-
-<!-- ## Remove sensors with < 24 data points -->
-<!-- ```{r, low-data-sensors} -->
-<!-- low_data_sensors <- pa_filtered %>%  -->
-<!--   group_by(sensor_index) %>% summarize(n = n()) %>% arrange(n) %>% filter(n < 24) -->
-<!-- pa_filtered <- pa_filtered %>%  -->
-<!--   filter(!(sensor_index %in% low_data_sensors$sensor_index)) -->
-<!-- ``` -->
-
-<!-- ```{r, channel-a-b-plot, eval = TRUE, warning=FALSE} -->
-<!-- if (FALSE) { -->
-<!--   p <- ggplot(pa_filtered, aes(x = pm2.5_atm_a, y = pm2.5_atm_b)) + -->
-<!--     geom_point() + -->
-<!--     labs(x = "Channel A PM2.5", -->
-<!--          y = "Channel B PM2.5", -->
-<!--          title = "PM2.5 Channel A vs B") + -->
-<!--     theme_minimal() -->
-
-<!--   ggsave(filename = paste0(preprocessing_directory, "/plots/pa_filtered.png"), -->
-<!--          plot = p, width = 6, height = 4) -->
-<!-- } -->
-
-<!-- img_path <- paste0(preprocessing_directory, "/plots/pa_filtered.png") -->
-<!-- knitr::include_graphics(img_path) -->
-<!-- ``` -->
 
 <!-- ## Remove 24 hour periods of zeros or missing data -->
 
 <!-- ```{r, rolling-zeros-missing} -->
-<!-- start_time <- min(pa_filtered$time_stamp, na.rm = TRUE) -->
-<!-- end_time <- max(pa_filtered$time_stamp, na.rm = TRUE) -->
+<!-- start_time <- min(purpleair_data$time_stamp, na.rm = TRUE) -->
+<!-- end_time <- max(purpleair_data$time_stamp, na.rm = TRUE) -->
 <!-- all_timestamps <- seq(from = start_time, to = end_time, by = "hour") -->
-<!-- all_sensor_indices <- unique(pa_filtered$sensor_index) -->
+<!-- all_sensor_indices <- unique(purpleair_data$sensor_index) -->
 <!-- complete_timestamps <- expand.grid(sensor_index = all_sensor_indices, -->
 <!--                                    time_stamp = all_timestamps) -->
-<!-- pa_complete <- complete_timestamps %>% -->
-<!--   left_join(pa_filtered, by = c("sensor_index", "time_stamp")) %>% -->
-<!--   mutate(pm2.5_atm = ifelse(is.na(pm2.5_atm), -1, pm2.5_atm)) -->
+<!-- purpleair_complete <- complete_timestamps %>% -->
+<!--   left_join(purpleair_data, by = c("sensor_index", "time_stamp")) -->
+<!-- ``` -->
 
-<!-- pa_complete <- pa_complete %>% -->
+
+<!-- ```{r, rolling-zeros-missing} -->
+<!-- pa_complete <- purpleair_complete %>% -->
+<!--   mutate(pm2.5_alt = ifelse(is.na(pm2.5_alt), -1, pm2.5_alt)) %>% -->
 <!--   group_by(sensor_index) %>% -->
 <!--   mutate( -->
-<!--     is_zero_or_missing = ifelse(pm2.5_atm == 0 | pm2.5_atm == -1, 1, 0), -->
-<!--     is_normal = ifelse(pm2.5_atm != 0 & pm2.5_atm != -1, 1, 0), -->
+<!--     is_zero_or_missing = ifelse(pm2.5_alt == 0 | pm2.5_alt == -1, 1, 0), -->
+<!--     is_normal = ifelse(pm2.5_alt != 0 & pm2.5_alt != -1, 1, 0), -->
 <!--     rolling_zeros_missing = rollapply(is_zero_or_missing, width = 24, FUN = sum, -->
 <!--                                       align = "right", fill = NA), -->
 <!--     rolling_normals = rollapply(is_normal, width = 24, FUN = sum, align = "right", fill = NA) -->
@@ -487,21 +529,21 @@ knitr::include_graphics(img_path)
 <!--   mutate( -->
 <!--     proportion_zeros_missing = rolling_zeros_missing / 24, -->
 <!--     flag_high_proportion = ifelse(proportion_zeros_missing >= 0.8, 1, 0) -->
-<!--   )  -->
+<!--   ) -->
 
-<!-- pa_complete <- pa_complete %>% filter(flag_high_proportion != 1) %>% -->
-<!--   select(-is_zero_or_missing, -is_normal, -rolling_zeros_missing, -->
-<!--          -rolling_normals, -proportion_zeros_missing, -flag_high_proportion) -->
+<!-- # pa_complete <- pa_complete %>% filter(flag_high_proportion != 1) %>% -->
+<!-- #   select(-is_zero_or_missing, -is_normal, -rolling_zeros_missing, -->
+<!-- #          -rolling_normals, -proportion_zeros_missing, -flag_high_proportion) -->
 <!-- ``` -->
 
-<!-- ## Plot sensors with >20% zeros  -->
+<!-- ## Plot sensors with >20% zeros -->
 
 <!-- ```{r, perc-zeros} -->
 <!-- # Percentage of zero readings for each sensor -->
 <!-- sensor_zero_readings <- pa_complete %>% -->
 <!--   group_by(sensor_index) %>% -->
-<!--   summarize(pct_zeros = round(100 * sum(pm2.5_atm == 0) / n(), 2), -->
-<!--             pct_missing = round(100 * sum(pm2.5_atm == -1) / n(), 2)) %>% -->
+<!--   summarize(pct_zeros = round(100 * sum(pm2.5_alt == 0) / n(), 2), -->
+<!--             pct_missing = round(100 * sum(pm2.5_alt == -1) / n(), 2)) %>% -->
 <!--   filter(pct_zeros > 20) -->
 
 <!-- # Loop through each sensor and create plots -->
@@ -514,32 +556,32 @@ knitr::include_graphics(img_path)
 
 <!--   # Create a data frame with segment information -->
 <!--   shifted_readings <- data.frame( -->
-<!--     time_stamp = head(data_sensor$time_stamp, -1),  -->
-<!--     time_stamp_shifted = tail(data_sensor$time_stamp, -1),  -->
-<!--     pm2.5_atm = head(data_sensor$pm2.5_atm, -1),  -->
-<!--     pm2.5_atm_shifted = tail(data_sensor$pm2.5_atm, -1) -->
+<!--     time_stamp = head(data_sensor$time_stamp, -1), -->
+<!--     time_stamp_shifted = tail(data_sensor$time_stamp, -1), -->
+<!--     pm2.5_alt = head(data_sensor$pm2.5_alt, -1), -->
+<!--     pm2.5_alt_shifted = tail(data_sensor$pm2.5_alt, -1) -->
 <!--   ) -->
 
-<!--   # Assign colors based on whether the pm2.5_atm value is zero or not -->
-<!--   shifted_readings <- shifted_readings %>%  -->
-<!--     mutate(flag = ifelse(pm2.5_atm == 0, "Zero", ifelse(pm2.5_atm == -1, "Missing", "Normal"))) -->
+<!--   # Assign colors based on whether the pm2.5_alt value is zero or not -->
+<!--   shifted_readings <- shifted_readings %>% -->
+<!--     mutate(flag = ifelse(pm2.5_alt == 0, "Zero", ifelse(pm2.5_alt == -1, "Missing", "Normal"))) -->
 
 <!--   # Plot the segments -->
 <!--   p <- ggplot(data=shifted_readings, aes(x=time_stamp, xend = time_stamp_shifted, -->
-<!--                                          y=pm2.5_atm, yend = pm2.5_atm_shifted,  -->
+<!--                                          y=pm2.5_alt, yend = pm2.5_alt_shifted, -->
 <!--                                          color=flag)) + -->
 <!--     geom_segment() + -->
 <!--     scale_color_manual(values = c("Normal" = "black", "Missing" = "yellow", -->
 <!--                                   "Zero" = "red"), -->
-<!--                        name = "") +  -->
-<!--     labs(x = "Time", y = "PM2.5",  -->
+<!--                        name = "") + -->
+<!--     labs(x = "Time", y = "PM2.5", -->
 <!--          title = paste0("Sensor ", s, "\n", -->
-<!--                         pz, "% zeros", "\n",  -->
+<!--                         pz, "% zeros", "\n", -->
 <!--                         pm, "% missing", -->
 <!--                         "\nNumber of readings: ", n)) + -->
 <!--     theme_minimal() -->
 
-<!--   ggsave(filename = file.path(preprocessing_directory, "plots", paste0( -->
+<!--   ggsave(filename = file.path("../docs", "plots", paste0( -->
 <!--     "pct", pz, "_sensor", s, ".png")), -->
 <!--     plot = p, width = 8, height = 6) -->
 <!-- } -->
@@ -553,22 +595,145 @@ knitr::include_graphics(img_path)
 <!-- for (i in 1:nrow(sensor_zero_readings)) { -->
 <!--   s <- sensor_zero_readings$sensor_index[[i]] -->
 <!--   pz <- round(sensor_zero_readings$pct_zeros[i], 0) -->
-<!--   img_path <- file.path(preprocessing_directory, "plots", -->
+<!--   img_path <- file.path("../docs", "plots", -->
 <!--                         paste0("pct", pz, "_sensor", s, ".png")) -->
 <!--   img_paths <- c(img_paths, img_path) -->
 <!-- } -->
 <!-- knitr::include_graphics(img_paths) -->
 <!-- ``` -->
 
-<!-- ## Remove sensor 20349 based on plots -->
-<!-- ```{r, remove-sensor} -->
-<!-- pa_complete <- pa_complete %>% -->
-<!--   filter(sensor_index != 20349) %>% filter(pm2.5_atm != -1) -->
+
+<!-- ```{r} -->
+<!-- # check which columns vary for a single sensor -->
+
+<!-- # Group by sensor and calculate standard deviation for each column to check variability -->
+<!-- sensor_variability <- purpleair_data %>% -->
+<!--   group_by(sensor_index) %>% -->
+<!--   summarize( -->
+<!--     location_type_var = sd(location_type, na.rm = TRUE), -->
+<!--     analog_input_var = sd(analog_input, na.rm = TRUE), -->
+<!--     pressure_var = sd(pressure, na.rm = TRUE), -->
+<!--     temperature_var = sd(temperature, na.rm = TRUE), -->
+<!--     humidity_var = sd(humidity, na.rm = TRUE), -->
+<!--     memory_var = sd(memory, na.rm = TRUE), -->
+<!--     uptime_var = sd(uptime, na.rm = TRUE), -->
+<!--     rssi_var = sd(rssi, na.rm = TRUE) -->
+<!--   ) -->
+
+<!-- # Assuming `sensor_variability` is your data.table or dataframe with variance info -->
+<!-- # Calculate the mean and median of each variable's standard deviation across all sensors -->
+
+<!-- summary_variability <- sensor_variability %>% -->
+<!--   summarise(across(ends_with("_var"), list(mean = mean, median = median), na.rm = TRUE)) -->
+
+<!-- print(summary_variability) -->
 <!-- ``` -->
 
-<!-- ## Save Filtered Data to CSV -->
+<!-- ## Save Processed Data to CSV -->
 
-<!-- ```{r, save-filtered-data, eval = TRUE} -->
-<!-- # Save filtered data -->
-<!-- write.csv(pa_complete, file = file.path(preprocessing_directory, "purpleair_filtered_2018-2019.csv"), row.names = FALSE) -->
+<!-- ```{r} -->
+<!-- write.csv(purpleair_processed, file = file.path("data", "processed", "purpleair_processed.csv"), row.names = FALSE) -->
 <!-- ``` -->
+
+
+<!-- ```{r} -->
+<!-- # Define a helper function to get the mode (most frequent value) -->
+<!-- Mode <- function(x) { -->
+<!--   ux <- unique(x) -->
+<!--   ux[which.max(tabulate(match(x, ux)))] -->
+<!-- } -->
+<!-- purpleair_processed <- purpleair_complete %>% -->
+<!--   mutate( -->
+<!--     time_stamp = lubridate::as_datetime(time_stamp), -->
+<!--     local_timestamp = with_tz(time_stamp, tzone = "America/Los_Angeles"), -->
+<!--     local_date = as.Date(local_timestamp, tz="America/Los_Angeles"), -->
+<!--     dow = lubridate::wday(local_timestamp), -->
+<!--     hour = lubridate::hour(local_timestamp), -->
+<!--     day = lubridate::day(local_timestamp), -->
+<!--     month = lubridate::month(local_timestamp), -->
+<!--     year = lubridate::year(local_timestamp), -->
+<!--     holiday = ifelse(local_date %in% holidays, 1, 0), -->
+<!--     location_type = ifelse(is.na(location_type), # Fill `location_type` with mode for each sensor -->
+<!--                            Mode(na.omit(location_type)), location_type)) %>% -->
+<!--   select(-pm2.5_alt_a, -pm2.5_alt_b, -local_timestamp, -local_date) -->
+<!-- ``` -->
+
+
+<!-- ```{r} -->
+<!-- # Calculate and view NA percentages for each column -->
+<!-- na_percentage <- purpleair_processed[, lapply(.SD, function(x) mean(is.na(x)) * 100)] -->
+<!-- print(na_percentage) -->
+<!-- ``` -->
+
+<!-- ```{r} -->
+<!-- library(zoo) -->
+
+<!-- purpleair_processed <- purpleair_processed %>% -->
+<!--   group_by(sensor_index) %>% -->
+<!--   arrange(time_stamp) %>% -->
+<!--   mutate( -->
+<!--     # Initialize imputed_flag for PM2.5 -->
+<!--     imputed_flag = ifelse(is.na(pm2.5_alt), 1, 0),   -->
+
+<!--     # Impute pm2.5_alt: Use LOCF first, then mean if any remaining NAs -->
+<!--     pm2.5_alt = na.locf(pm2.5_alt, na.rm = FALSE), -->
+<!--     imputed_flag = ifelse(is.na(pm2.5_alt), 1, imputed_flag),   -->
+<!--     pm2.5_alt = ifelse(is.na(pm2.5_alt), mean(pm2.5_alt, na.rm = TRUE), pm2.5_alt), -->
+
+<!--     # Impute other variables using LOCF first, then mean -->
+<!--     pressure = na.locf(pressure, na.rm = FALSE), -->
+<!--     pressure = ifelse(is.na(pressure), mean(pressure, na.rm = TRUE), pressure), -->
+
+<!--     temperature = na.locf(temperature, na.rm = FALSE), -->
+<!--     temperature = ifelse(is.na(temperature), mean(temperature, na.rm = TRUE), temperature), -->
+
+<!--     humidity = na.locf(humidity, na.rm = FALSE), -->
+<!--     humidity = ifelse(is.na(humidity), mean(humidity, na.rm = TRUE), humidity), -->
+
+<!--     memory = na.locf(memory, na.rm = FALSE), -->
+<!--     memory = ifelse(is.na(memory), mean(memory, na.rm = TRUE), memory), -->
+
+<!--     uptime = na.locf(uptime, na.rm = FALSE), -->
+<!--     uptime = ifelse(is.na(uptime), mean(uptime, na.rm = TRUE), uptime), -->
+
+<!--     rssi = na.locf(rssi, na.rm = FALSE), -->
+<!--     rssi = ifelse(is.na(rssi), mean(rssi, na.rm = TRUE), rssi) -->
+<!--   ) %>% -->
+<!--   ungroup() -->
+<!-- ``` -->
+
+<!-- ```{r} -->
+<!-- # Calculate and view NA percentages for each column -->
+<!-- na_percentage <- purpleair_processed[, lapply(.SD, function(x) mean(is.na(x)) * 100)] -->
+<!-- print(na_percentage) -->
+<!-- ``` -->
+
+
+<!-- ```{r} -->
+<!-- # Filling missing PM2.5 values with LOCF and mean imputation. -->
+<!-- # Fill by first carrying forward the last observed values for each sensor.  -->
+<!-- # Any remaining missing values will then be filled with the mean, ensuring no gaps remain. -->
+<!-- library(zoo) # Ensure the zoo package is loaded for na.locf -->
+
+<!-- # purpleair_processed <- purpleair_complete %>% -->
+<!-- #   group_by(sensor_index) %>% -->
+<!-- #   arrange(time_stamp) %>% -->
+<!-- #   mutate( -->
+<!-- #     pm2.5_alt = na.locf(pm2.5_alt, na.rm = FALSE),       # Use LOCF for PM2.5 values -->
+<!-- #     pm2.5_alt = ifelse(is.na(pm2.5_alt), mean(pm2.5_alt, na.rm = TRUE), pm2.5_alt)  # Fill remaining NAs with mean -->
+<!-- #   ) %>% -->
+<!-- #   ungroup() -->
+
+<!-- purpleair_processed <- purpleair_processed %>% -->
+<!--   group_by(sensor_index) %>% -->
+<!--   arrange(time_stamp) %>% -->
+<!--   mutate( -->
+<!--     imputed_flag = ifelse(is.na(pm2.5_alt), 1, 0),  # Initialize flag for missing values -->
+<!--     pm2.5_alt = na.locf(pm2.5_alt, na.rm = FALSE),  # Use LOCF to fill missing values -->
+<!--     imputed_flag = ifelse(is.na(pm2.5_alt), 1, imputed_flag), # Update flag for remaining NAs -->
+<!--     pm2.5_alt = ifelse(is.na(pm2.5_alt), mean(pm2.5_alt, na.rm = TRUE), pm2.5_alt) # Fill remaining NAs with mean -->
+<!--   ) %>% -->
+<!--   ungroup() -->
+<!-- ``` -->
+
+
