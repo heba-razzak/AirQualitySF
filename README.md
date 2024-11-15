@@ -14,58 +14,43 @@ The workflow is structured into distinct stages: data collection and preprocessi
 
 ### Data Collection and Preprocessing
 
-1. **`01_purpleair_data.Rmd`**:
-   - Collects and preprocesses the PurpleAir sensor data.
+-   [01_purpleair_data](docs/01_purpleair_data.md): Collects and preprocesses the PurpleAir sensor data, including handling missing timestamps and cleaning readings.
+-   [02_aqs_data](docs/02_aqs_data.md): Collects and preprocesses AQS data, focusing on regulatory-grade PM2.5 measurements.
+-   [03_weather_data](docs/03_weather_data.md): Collects and preprocesses weather station data, integrating temperature, humidity, wind speed, and other features.
+-   [04_wildfire_data](docs/04_wildfire_data.md): Collects and preprocesses wildfire data, including proximity metrics and containment status.
+-   [05_osm_data](docs/05_osm_data.md): Collects and preprocesses OpenStreetMap (OSM) data, focusing on spatial features like road networks and land use.
+-   [06_uber_data](docs/06_uber_data.md): Collects and preprocesses Uber Speeds data.
 
-2. **`02_aqs_data.Rmd`**:
-   - Collects and preprocesses the AQS data.
-
-3. **`03_weather_data.Rmd`**:
-   - Collects and preprocesses the weather data.
-
-4. **`04_wildfire_data.Rmd`**:
-   - Collects and preprocesses the wildfire data.
-
-5. **`05_osm_data.Rmd`**:
-   - Collects and preprocesses the OpenStreetMap (OSM) data.
+---
 
 ### Exploratory Data Analysis
 
-6. **`07_eda_purpleair.Rmd`**:
-   - Explores and visualizes the PurpleAir data.
+-   [07_eda_purpleair](docs/07_eda_purpleair.md): Explores and visualizes the PurpleAir sensor data, identifying trends and calibration differences.
+-   [08_eda_aqs](docs/08_eda_aqs.md): Explores and visualizes AQS data, analyzing PM2.5 patterns and comparisons with PurpleAir data.
+-   [09_eda_weather](docs/09_eda_weather.md): Explores and visualizes weather data, analyzing spatial and temporal variations.
+-   [10_eda_wildfire](docs/10_eda_wildfire.md): Examines wildfire data, identifying trends in occurrences and impacts on air quality.
+-   [11_eda_osm](docs/11_eda_osm.md): Explores OSM data, analyzing geographic distributions and potential influences on air quality.
+-   [12_eda_uber](docs/11_eda_osm.md): Explores OSM data, analyzing geographic distributions and potential influences on air quality.
 
-7. **`08_eda_aqs.Rmd`**:
-   - Explores and visualizes the AQS data.
-
-8. **`09_eda_weather.Rmd`**:
-   - Explores and visualizes the weather data.
-
-9. **`10_eda_wildfire.Rmd`**:
-   - Explores and visualizes the wildfire data.
-
-10. **`11_eda_osm.Rmd`**:
-    - Explores and visualizes the OSM data.
+---
 
 ### Data Integration
 
-11. **`13_data_integration.Rmd`**:
-    - Integrates the various data sources into a single dataset.
+-   [13_data_integration](docs/13_data_integration.md): Merges datasets (PurpleAir, AQS, weather, wildfire, OSM) into a single dataset for modeling.
+
+---
 
 ### Feature Engineering
 
-12. **`12_feature_engineering.Rmd`**:
-    - Creates new features from the integrated dataset.
+-   [14_feature_engineering](docs/14_feature_engineering.md): Develops predictive features, including lagged PM2.5 values, weather metrics, and wildfire proximity trends.
+
+---
 
 ### Modeling
 
-13. **`13_linear_regression.Rmd`**:
-    - Develops a linear regression model.
-
-14. **`14_tree_based_models.Rmd`**:
-    - Develops tree-based models (Random Forest, XGBoost).
-
-15. **`15_ensemble_methods.Rmd`**:
-    - Develops ensemble models (stacking, blending).
+-   [15_linear_regression](docs/15_linear_regression.md): Implements a linear regression model as a baseline for PM2.5 prediction.
+-   [16_tree_based_models](docs/16_tree_based_models.md): Develops tree-based models (Random Forest, XGBoost) for improved accuracy.
+-   [17_ensemble_methods](docs/17_ensemble_methods.md): Explores ensemble models like stacking and blending for enhanced predictive performance.
 
 ---
 

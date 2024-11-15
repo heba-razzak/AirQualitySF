@@ -18,12 +18,6 @@ knit: (function(input, ...) {rmarkdown::render(input, output_dir = "../docs", )}
 knitr::opts_chunk$set(fig.path = "../docs/plots/")
 ```
 
-```{r, github-package, include=FALSE}
-if (!"DataOverviewR" %in% rownames(installed.packages())) {
-  suppressMessages({devtools::install_github("heba-razzak/DataOverviewR")})
-}
-```
-
 Load required libraries
 
 ```{r, load-libraries, message = FALSE, warning = FALSE}
@@ -101,6 +95,7 @@ pa_sf <- st_as_sf(pa_sensors, coords=c("longitude", "latitude"), crs = 4326)
 Link Wildfires and PurpleAir sensors by distance and direction
 
 ```{r, calc-dist-dir}
+
 filepath <- file.path("data", "processed", "wildfires_purpleair.csv")
 if (!file.exists(filepath)) {
   # Add Unique Fire ID

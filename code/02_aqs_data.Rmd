@@ -13,12 +13,6 @@ aqs_creds = readr::read_file(file.path("inputs", "aqs_credentials.txt"))
 aqs_creds <- strsplit(aqs_creds, split = ", ")[[1]]
 ```
 
-```{r, github-package, include=FALSE}
-if (!"DataOverviewR" %in% rownames(installed.packages())) {
-  suppressMessages({devtools::install_github("heba-razzak/DataOverviewR")})
-}
-```
-
 Load required libraries
 
 ```{r, load-libraries, message = FALSE, warning = FALSE}

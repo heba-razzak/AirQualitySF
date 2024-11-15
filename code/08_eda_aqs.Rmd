@@ -1,5 +1,5 @@
 ---
-title: "Exploratory Data Analysis: Air Quality System (AQS)" 
+title: "Exploratory Data Analysis: Air Quality System" 
 output: github_document
 knit: (function(input, ...) {rmarkdown::render(input, output_dir = "../docs", )})
 ---

@@ -11,12 +11,6 @@ knit: (function(input, ...) {rmarkdown::render(input, output_dir = "../docs", )}
 knitr::opts_chunk$set(fig.path = "../docs/plots/")
 ```
 
-```{r, github-package, include=FALSE}
-if (!"DataOverviewR" %in% rownames(installed.packages())) {
-  suppressMessages({devtools::install_github("heba-razzak/DataOverviewR")})
-}
-```
-
 Load required libraries
 
 ```{r, load-libraries, message = FALSE, warning = FALSE}
@@ -32,7 +26,7 @@ library(DataOverviewR) # Data dictionary and summary
 Define Bay Area bounding box
 
 ```{r, bbox-setup, eval=TRUE}
-# Greater san fran area
+# Greater San Francisco area
 bbox <- c(xmin = -123.8, ymin = 36.9, xmax = -121.0, ymax = 39.0)
 
 # Convert the bounding box to an sf object and set the CRS (WGS 84)

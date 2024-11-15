@@ -1,5 +1,5 @@
 ---
-title: "PurpleAir Data Collection"
+title: "PurpleAir Data"
 output: github_document
 knit: (function(input, ...) {rmarkdown::render(input, output_dir = "../docs", )})
 ---
@@ -137,21 +137,21 @@ knitr::kable(head(pa_sf, 3),
 ```{r, measurement-data-dictionary}
 desc <- data_description(
   purpleair_data,
-  var_desc = c(
-    "time_stamp" = "UTC timestamp of measurement",
-    "rssi" = "WiFi signal strength (dBm)",
-    "uptime" = "Minutes since last firmware restart",
-    "memory" = "Free HEAP memory (Kb)",
-    "humidity" = "Internal RH (%). ~4% lower than ambient",
-    "temperature" = "Internal temperature (°F). ~8°F higher than ambient",
-    "pressure" = "Atmospheric pressure (millibars)",
-    "analog_input" = "Voltage on ADC input (if connected)",
-    "pm2.5_alt" = "PM2.5 concentration using ALT formula (μg/m³)",
-    "pm2.5_alt_a" = "Channel A PM2.5 (ALT formula)",
-    "pm2.5_alt_b" = "Channel B PM2.5 (ALT formula)",
-    "sensor_index" = "Unique sensor identifier",
-    "location_type" = "Sensor location (0=Outside, 1=Inside)"
-  ))
+  var_desc = 
+    c("time_stamp" = "UTC (Unix) time stamp for that row of data.",
+      "rssi" = "The WiFi signal strength.",
+      "uptime" = "The time in minutes since the firmware started as last reported by the sensor.",
+      "memory" = "Free HEAP memory in Kb.",
+      "humidity" = "Relative humidity inside of the sensor housing (%). This matches the 'Raw Humidity' map layer and on average is 4% lower than ambient conditions. Null if not equipped.",
+      "temperature" = "Temperature inside of the sensor housing (F). This matches the 'Raw Temperature' map layer and on average is 8°F higher than ambient conditions. Null if not equipped.",
+      "pressure" = "Current pressure in Millibars.",
+      "analog_input" = "If anything is connected to it, the analog voltage on ADC input of the PurpleAir sensor control board.",
+      "pm2.5_alt" = "Estimated mass concentration PM2.5 (µg/m³). PM2.5 are fine particulates with a diameter of fewer than 2.5 microns. ALT Formula for estimation.",
+      "pm2.5_alt_a" = "Channel A ALT variant",
+      "pm2.5_alt_b" = "Channel B ALT variant",
+      "sensor_index" = "The sensor's index. Can be used to add a sensor to a group or view its details.",
+      "location_type" = "The location type. Possible values are: 0 = Outside or 1 = Inside."
+    ))
 
 data_dictionary(purpleair_data, 
                 data_title = "PurpleAir Bay Area Hourly Measurements", 

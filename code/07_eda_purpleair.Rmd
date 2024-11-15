@@ -8,12 +8,6 @@ knit: (function(input, ...) {rmarkdown::render(input, output_dir = "../docs", )}
 knitr::opts_chunk$set(fig.path = "../docs/plots/")
 ```
 
-```{r, github-package, include=FALSE}
-if (!"DataOverviewR" %in% rownames(installed.packages())) {
-  suppressMessages({devtools::install_github("heba-razzak/DataOverviewR")})
-}
-```
-
 ```{r, load-libraries, message = FALSE, warning = FALSE, echo = FALSE}
 library(dplyr)         # For data manipulation
 library(data.table)    # Working with large files

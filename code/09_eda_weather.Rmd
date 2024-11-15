@@ -1,5 +1,5 @@
 ---
-title: "Exploratory Data Analysis: Weather Data" 
+title: "Exploratory Data Analysis: Weather" 
 output: github_document
 knit: (function(input, ...) {rmarkdown::render(input, output_dir = "../docs", )})
 ---

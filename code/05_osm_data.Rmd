@@ -1,17 +1,11 @@
 ---
-title: "Download OSM data"
+title: "OpenStreetMap Data"
 output: github_document
 knit: (function(input, ...) {rmarkdown::render(input, output_dir = "../docs", )})
 ---
 
 ```{r, setup, include=FALSE}
 knitr::opts_chunk$set(fig.path = "../docs/plots/")
-```
-
-```{r, github-package, include=FALSE}
-if (!"DataOverviewR" %in% rownames(installed.packages())) {
-  suppressMessages({devtools::install_github("heba-razzak/DataOverviewR")})
-}
 ```
 
 Load required libraries
@@ -231,11 +225,6 @@ key_counts <- osm_land %>%
 key_counts
 ```
 
-
-
-
-
-
 Check where NA values
 
 ```{r}
@@ -246,11 +235,6 @@ osm_land %>% filter(is.na(osm_value))
 na_check <- osm_land %>% filter(osm_id == 548274970, sensor_index == 10092)
 mapview(na_check, col.regions = "#8ac926", alpha.regions = 0.5)
 ```
-
-
-
-
-
 
 Might need later
 

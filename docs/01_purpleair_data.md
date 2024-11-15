@@ -1,4 +1,4 @@
-PurpleAir Data Collection
+PurpleAir Data
 ================
 
 # Purpose
@@ -129,7 +129,7 @@ data_dictionary(pa_sf,
 
 #### PurpleAir Sensors in Bay Area
 
-`26,691` rows
+`26,672` rows
 
 `0` rows with missing values
 
@@ -151,9 +151,9 @@ knitr::kable(head(pa_sf, 3),
 
 | sensor_index | date_created | last_seen | location_type | geometry |
 |---:|:---|:---|---:|:---|
-| 182 | 2016-08-01 | 2024-11-14 | 0 | POINT (-123.7423 49.16008) |
-| 195 | 2016-08-01 | 2024-11-14 | 0 | POINT (-124.1288 41.06) |
-| 286 | 2016-09-06 | 2024-11-14 | 0 | POINT (-124.2666 49.48426) |
+| 182 | 2016-08-01 | 2024-11-15 | 0 | POINT (-123.7423 49.16008) |
+| 195 | 2016-08-01 | 2024-11-15 | 0 | POINT (-124.1288 41.06) |
+| 286 | 2016-09-06 | 2024-11-15 | 0 | POINT (-124.2666 49.48426) |
 
 Example Sensor Records
 
@@ -162,21 +162,21 @@ Example Sensor Records
 ``` r
 desc <- data_description(
   purpleair_data,
-  var_desc = c(
-    "time_stamp" = "UTC timestamp of measurement",
-    "rssi" = "WiFi signal strength (dBm)",
-    "uptime" = "Minutes since last firmware restart",
-    "memory" = "Free HEAP memory (Kb)",
-    "humidity" = "Internal RH (%). ~4% lower than ambient",
-    "temperature" = "Internal temperature (°F). ~8°F higher than ambient",
-    "pressure" = "Atmospheric pressure (millibars)",
-    "analog_input" = "Voltage on ADC input (if connected)",
-    "pm2.5_alt" = "PM2.5 concentration using ALT formula (μg/m³)",
-    "pm2.5_alt_a" = "Channel A PM2.5 (ALT formula)",
-    "pm2.5_alt_b" = "Channel B PM2.5 (ALT formula)",
-    "sensor_index" = "Unique sensor identifier",
-    "location_type" = "Sensor location (0=Outside, 1=Inside)"
-  ))
+  var_desc = 
+    c("time_stamp" = "UTC (Unix) time stamp for that row of data.",
+      "rssi" = "The WiFi signal strength.",
+      "uptime" = "The time in minutes since the firmware started as last reported by the sensor.",
+      "memory" = "Free HEAP memory in Kb.",
+      "humidity" = "Relative humidity inside of the sensor housing (%). This matches the 'Raw Humidity' map layer and on average is 4% lower than ambient conditions. Null if not equipped.",
+      "temperature" = "Temperature inside of the sensor housing (F). This matches the 'Raw Temperature' map layer and on average is 8°F higher than ambient conditions. Null if not equipped.",
+      "pressure" = "Current pressure in Millibars.",
+      "analog_input" = "If anything is connected to it, the analog voltage on ADC input of the PurpleAir sensor control board.",
+      "pm2.5_alt" = "Estimated mass concentration PM2.5 (µg/m³). PM2.5 are fine particulates with a diameter of fewer than 2.5 microns. ALT Formula for estimation.",
+      "pm2.5_alt_a" = "Channel A ALT variant",
+      "pm2.5_alt_b" = "Channel B ALT variant",
+      "sensor_index" = "The sensor's index. Can be used to add a sensor to a group or view its details.",
+      "location_type" = "The location type. Possible values are: 0 = Outside or 1 = Inside."
+    ))
 
 data_dictionary(purpleair_data, 
                 data_title = "PurpleAir Bay Area Hourly Measurements", 
@@ -192,19 +192,19 @@ data_dictionary(purpleair_data,
 
 | Column | Type | Description |
 |:--:|:--:|:--:|
-| time_stamp | character | UTC timestamp of measurement |
-| rssi | integer | WiFi signal strength (dBm) |
-| uptime | integer | Minutes since last firmware restart |
-| memory | integer | Free HEAP memory (Kb) |
-| humidity | numeric | Internal RH (%). ~4% lower than ambient |
-| temperature | numeric | Internal temperature (°F). ~8°F higher than ambient |
-| pressure | numeric | Atmospheric pressure (millibars) |
-| analog_input | numeric | Voltage on ADC input (if connected) |
-| pm2.5_alt | numeric | PM2.5 concentration using ALT formula (μg/m³) |
-| pm2.5_alt_a | numeric | Channel A PM2.5 (ALT formula) |
-| pm2.5_alt_b | numeric | Channel B PM2.5 (ALT formula) |
-| sensor_index | integer | Unique sensor identifier |
-| location_type | integer | Sensor location (0=Outside, 1=Inside) |
+| time_stamp | character | UTC (Unix) time stamp for that row of data. |
+| rssi | integer | The WiFi signal strength. |
+| uptime | integer | The time in minutes since the firmware started as last reported by the sensor. |
+| memory | integer | Free HEAP memory in Kb. |
+| humidity | numeric | Relative humidity inside of the sensor housing (%). This matches the ‘Raw Humidity’ map layer and on average is 4% lower than ambient conditions. Null if not equipped. |
+| temperature | numeric | Temperature inside of the sensor housing (F). This matches the ‘Raw Temperature’ map layer and on average is 8°F higher than ambient conditions. Null if not equipped. |
+| pressure | numeric | Current pressure in Millibars. |
+| analog_input | numeric | If anything is connected to it, the analog voltage on ADC input of the PurpleAir sensor control board. |
+| pm2.5_alt | numeric | Estimated mass concentration PM2.5 (µg/m³). PM2.5 are fine particulates with a diameter of fewer than 2.5 microns. ALT Formula for estimation. |
+| pm2.5_alt_a | numeric | Channel A ALT variant |
+| pm2.5_alt_b | numeric | Channel B ALT variant |
+| sensor_index | integer | The sensor’s index. Can be used to add a sensor to a group or view its details. |
+| location_type | integer | The location type. Possible values are: 0 = Outside or 1 = Inside. |
 
 ``` r
 # Show missing value patterns
@@ -290,12 +290,12 @@ quality_metrics <- data.frame(
     "Indoor Sensors"
   ),
   Value = c(
-    n_distinct(purpleair_data$sensor_index),
-    paste(range(as.Date(purpleair_data$time_stamp)), collapse = " to "),
-    nrow(purpleair_data),
-    round(nrow(purpleair_data)/n_distinct(purpleair_data$sensor_index), 2),
-    mean(is.na(purpleair_data$pm2.5_alt)),
-    sum(purpleair_data$location_type == 1, na.rm=TRUE)/nrow(purpleair_data)
+    format(n_distinct(purpleair_data$sensor_index), big.mark = ","),
+    paste(format(range(as.Date(purpleair_data$time_stamp)), "%Y-%m-%d"), collapse = " to "),
+    format(nrow(purpleair_data), big.mark = ","),
+    format(round(nrow(purpleair_data)/n_distinct(purpleair_data$sensor_index), 2), big.mark = ","),
+    format(round(mean(is.na(purpleair_data$pm2.5_alt)), 5), nsmall = 5),
+    format(round(sum(purpleair_data$location_type == 1, na.rm=TRUE)/nrow(purpleair_data), 3), nsmall = 3)
   )
 )
 
@@ -306,9 +306,9 @@ knitr::kable(quality_metrics, align = "l", caption = "Data Quality Metrics")
 |:------------------------|:-------------------------|
 | Total Sensors           | 933                      |
 | Date Range              | 2018-01-01 to 2019-12-31 |
-| Total Measurements      | 5136009                  |
-| Measurements per Sensor | 5504.83                  |
-| Missing PM2.5 Rate      | 0.000158488818847475     |
-| Indoor Sensors          | 0.264541981916309        |
+| Total Measurements      | 5,136,009                |
+| Measurements per Sensor | 5,504.83                 |
+| Missing PM2.5 Rate      | 0.00016                  |
+| Indoor Sensors          | 0.265                    |
 
 Data Quality Metrics
