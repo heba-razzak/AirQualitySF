@@ -84,3 +84,14 @@ Before running the R Markdown documents, please make sure to install the require
 ```r
 source("setup.R")
 ```
+
+## References
+
+HIGHWAY DESCRIPTIONS
+https://taginfo.openstreetmap.org/keys/highway#values
+
+
+https://taginfo.geofabrik.de/north-america:us:california:norcal/keys/landuse#overview
+
+OSM LAND USE CATEGORIZATION
+https://osmlanduse.org/#10/-122.21682/37.73751/0/

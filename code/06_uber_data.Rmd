@@ -17,6 +17,43 @@ library(DataOverviewR) # Data dictionary and summary
 ```
 
 ```{r, read-uber, echo = FALSE}
+# Get a list of uber file paths
+file_paths <- list.files(uber_directory, pattern = "movement-speeds-hourly-san-francisco-.*.csv", full.names = TRUE)
+
+preprocess_and_filter_uber_file <- function(file) {
+  data <- fread(file)
+  # Select necessary columns, and filter by relevant_osm_ids
+  data <- data %>% 
+          select(utc_timestamp, osm_way_id, speed_mph_mean) %>%
+          filter(osm_way_id %in% relevant_osm_ids) %>%
+          filter(complete.cases(.))
+  return(data)
+}
+
+# Apply the preprocessing and filtering function to each file and combine
+uber_data_list <- lapply(file_paths, preprocess_and_filter_uber_file)
+uber_data <- rbindlist(uber_data_list, use.names = TRUE, fill = TRUE)
+```
+
+```{r, congestion, eval=FALSE}
+# Calculate congestion
+uber_congestion <- uber_data %>%
+  group_by(osm_way_id) %>%
+  mutate(
+    free_flow_speed = quantile(speed_mph_mean, 0.95),
+    congestion_ratio = speed_mph_mean / free_flow_speed
+  ) %>%
+  ungroup()
+```
+
+## Save filtered & combined Uber traffic file
+```{r, save-traffic-file, eval=FALSE}
+# Save the combined data
+fwrite(uber_congestion, paste0(preprocessing_directory, "/traffic.csv"))
+```
+
+
+```{r, read-uber1, echo = FALSE}
 uber201801 <- fread(file.path("data", "raw", "Uber", "Speeds", "movement-speeds-hourly-san-francisco-2018-1.csv"))
 ```
 

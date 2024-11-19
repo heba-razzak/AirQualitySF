@@ -11,8 +11,8 @@ knitr::opts_chunk$set(fig.path = "../docs/plots/", fig.dim = c(6, 4))
 ```
 
 ```{r, github-packages, echo=FALSE}
-if (!"purpleAirAPI" %in% rownames(installed.packages())) {
-  suppressMessages({devtools::install_github("heba-razzak/purpleAirAPI")})
+if (!"PurpleAirAPI" %in% rownames(installed.packages())) {
+  suppressMessages({devtools::install_github("heba-razzak/PurpleAirAPI")})
 }
 
 if (!"DataOverviewR" %in% rownames(installed.packages())) {

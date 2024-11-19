@@ -18,7 +18,7 @@ library(dplyr)         # Data manipulation
 library(sf)            # Spatial data manipulation
 library(ggplot2)       # Data visualization
 library(kableExtra)    # Printing formatted tables
-library(purpleAirAPI)  # Download PurpleAir Data
+library(PurpleAirAPI)  # Download PurpleAir Data
 library(leaflet)       # Interactive maps
 library(htmlwidgets)   # Creating HTML widgets
 library(webshot)       # Convert URL to image

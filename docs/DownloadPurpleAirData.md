@@ -1,16 +1,15 @@
-Download PurpleAir Data
-================
+# Download PurpleAir Data
 
 ## Load required libraries
 
-``` r
+```r
 library(dplyr)        # Data manipulation
 library(sf)           # Spatial data manipulation
 library(ggplot2)      # Data visualization
 library(lubridate)    # Working with dates
 library(tigris)       # Counties map data
 library(kableExtra)   # Printing formatted tables
-library(purpleAirAPI) # Download PurpleAir Data
+library(PurpleAirAPI) # Download PurpleAir Data
 library(DataOverviewR)
 ```
 
@@ -24,7 +23,7 @@ fields](https://api.purpleair.com/#api-sensors-get-sensor-data)
 [Field
 Descriptions](https://community.purpleair.com/t/api-history-fields-descriptions/4652)
 
-``` r
+```r
 # Download sensor data
 pa <- getPurpleairSensors(apiReadKey = api_key) %>% na.omit()
 ```
@@ -32,14 +31,14 @@ pa <- getPurpleairSensors(apiReadKey = api_key) %>% na.omit()
 ### PurpleAir Sensor Data
 
 | sensor_index | date_created | last_seen  | latitude | longitude |
-|-------------:|:-------------|:-----------|---------:|----------:|
+| -----------: | :----------- | :--------- | -------: | --------: |
 |           53 | 2016-02-04   | 2024-09-24 | 40.24674 | -111.7048 |
 |           77 | 2016-03-02   | 2024-09-24 | 40.75082 | -111.8253 |
 |          182 | 2016-08-01   | 2024-09-24 | 49.16008 | -123.7423 |
 
 ## Convert PurpleAir data frame to shapefile
 
-``` r
+```r
 # Convert the PurpleAir data frame to an sf object
 pa_sf <- st_as_sf(pa, coords=c("longitude", "latitude"), crs = crs)
 ```
@@ -47,7 +46,7 @@ pa_sf <- st_as_sf(pa, coords=c("longitude", "latitude"), crs = crs)
 ### PurpleAir Sensor Shapefile
 
 | sensor_index | date_created | last_seen  | geometry                   |
-|-------------:|:-------------|:-----------|:---------------------------|
+| -----------: | :----------- | :--------- | :------------------------- |
 |           53 | 2016-02-04   | 2024-09-24 | POINT (-111.7048 40.24674) |
 |           77 | 2016-03-02   | 2024-09-24 | POINT (-111.8253 40.75082) |
 |          182 | 2016-08-01   | 2024-09-24 | POINT (-123.7423 49.16008) |
@@ -59,7 +58,7 @@ pa_sf <- st_as_sf(pa, coords=c("longitude", "latitude"), crs = crs)
 `0` rows with missing values
 
 |    Column    |   Type    |                                   Description                                   | NA_Count | N_Unique |
-|:------------:|:---------:|:-------------------------------------------------------------------------------:|:--------:|:--------:|
+| :----------: | :-------: | :-----------------------------------------------------------------------------: | :------: | :------: |
 | sensor_index |  numeric  | The sensor’s index. Can be used to add a sensor to a group or view its details. |    0     |  26,925  |
 | date_created |   Date    |              The UNIX time stamp from when the device was created.              |    0     |  1,659   |
 |  last_seen   |   Date    | The UNIX time stamp of the last time the server received data from the device.  |    0     |    31    |
@@ -69,7 +68,7 @@ pa_sf <- st_as_sf(pa, coords=c("longitude", "latitude"), crs = crs)
 
 Filter sensors within a bounding box of the bay area
 
-``` r
+```r
 # Define bounding box for the Bay Area
 bbox <- c(xmin = -123.8, ymin = 36.9, xmax = -121.0, ymax = 39.0)
 bbox_sf <- st_as_sfc(st_bbox(bbox))
@@ -83,12 +82,12 @@ total_sensors <- length(unique(purpleairs_sf$sensor_index))
 ca <- counties("California", cb = TRUE)
 
 # Plot the sensors
-ggplot() + 
+ggplot() +
   geom_sf(data = ca, color = "black", fill = "antiquewhite", size = 0.25) +
   geom_sf(data = purpleairs_sf, color = "purple", size = 0.1) +
   coord_sf(xlim = c(-123.8, -121.0), ylim = c(36.9, 39.0)) +
-  theme(panel.background = element_rect(fill = "aliceblue")) + 
-  labs(title = "PurpleAir Sensors in the Bay Area", 
+  theme(panel.background = element_rect(fill = "aliceblue")) +
+  labs(title = "PurpleAir Sensors in the Bay Area",
        subtitle = paste0(total_sensors," sensors"),
        x = "Longitude", y = "Latitude")
 ```
@@ -97,7 +96,7 @@ ggplot() +
 
 ## Set inputs for PurpleAir data
 
-``` r
+```r
 fields <- c("pm2.5_atm", "pm2.5_atm_a", "pm2.5_atm_b", "rssi", "uptime",
             "memory", "humidity", "temperature", "pressure", "analog_input")
 average <- "60"
@@ -109,19 +108,19 @@ end_date <- as.Date("2019-12-31")
 
 ## Download Purple Air Hourly Data for 2018-2019
 
-``` r
+```r
 # only download if file doesnt exist
 filename <- paste0("purpleair_", start_date, "_", end_date, ".csv")
 filepath <- file.path(purpleair_directory, filename)
 if (!file.exists(filepath)) {
   start_time <- Sys.time()
-  
-  filtered_sensors_sf <- purpleairs_sf %>% 
-    filter(last_seen >= start_date) %>% 
+
+  filtered_sensors_sf <- purpleairs_sf %>%
+    filter(last_seen >= start_date) %>%
     filter(date_created <= end_date)
-  
+
   sensor_ids <- unique(filtered_sensors_sf$sensor_index)
-  
+
   # Get PurpleAir data
   purpleair_data <- getSensorHistory(
     sensorIndex = sensor_ids,
@@ -142,7 +141,7 @@ if (!file.exists(filepath)) {
 # PurpleAir Bay Area Hourly 2018-2019
 
 | time_stamp          | rssi | uptime | memory | humidity | temperature | pressure | analog_input | pm2.5_atm | pm2.5_atm_a | pm2.5_atm_b | sensor_index |
-|:--------------------|-----:|-------:|-------:|---------:|------------:|---------:|-------------:|----------:|------------:|------------:|-------------:|
+| :------------------ | ---: | -----: | -----: | -------: | ----------: | -------: | -----------: | --------: | ----------: | ----------: | -----------: |
 | 2018-01-01 00:00:00 |  -56 |  59100 |  28159 |   35.676 |      71.729 |       NA |        0.010 |   47.9165 |      48.090 |      47.743 |          767 |
 | 2018-01-01 01:00:00 |  -57 |  62700 |  28159 |   38.911 |      68.619 |       NA |        0.016 |   45.9330 |      46.117 |      45.749 |          767 |
 | 2018-01-01 02:00:00 |  -57 |  66300 |  28164 |   41.358 |      66.688 |       NA |        0.019 |   43.3735 |      43.434 |      43.313 |          767 |
@@ -154,7 +153,7 @@ if (!file.exists(filepath)) {
 `1,209,411` rows with missing values
 
 |    Column    |   Type    |                                                                               Description                                                                               | NA_Count | NA_Percentage | N_Unique |                             Top_3                             |
-|:------------:|:---------:|:-----------------------------------------------------------------------------------------------------------------------------------------------------------------------:|:--------:|:-------------:|:--------:|:-------------------------------------------------------------:|
+| :----------: | :-------: | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------: | :------: | :-----------: | :------: | :-----------------------------------------------------------: |
 |  time_stamp  | character |                                                               UTC (Unix) time stamp for that row of data.                                                               |    0     |               |  17,519  | 2019-12-31 21:00:00, 2019-12-31 22:00:00, 2019-12-29 22:00:00 |
 |     rssi     |  integer  |                                                                        The WiFi signal strength.                                                                        |  3,776   |      0%       |   130    |                         -60, -61, -59                         |
 |    uptime    |  numeric  |                                             The time in minutes since the firmware started as last reported by the sensor.                                              |  3,776   |      0%       | 389,292  |                       1860, 4140, 1980                        |
@@ -175,7 +174,7 @@ if (!file.exists(filepath)) {
 `1,209,411` rows with missing values
 
 |   variable   |                 mean                 |                    sd                     |    p25    |   median   |     p75      |
-|:------------:|:------------------------------------:|:-----------------------------------------:|:---------:|:----------:|:------------:|
+| :----------: | :----------------------------------: | :---------------------------------------: | :-------: | :--------: | :----------: |
 |     rssi     |                -62.83                |                   17.13                   |  -74.00   |   -65.00   |    -56.00    |
 |    uptime    |              679,822.46              |                955,614.65                 | 25,220.00 | 175,980.00 | 1,017,120.00 |
 |    memory    |              24,473.53               |                 5,720.47                  | 19,469.00 | 20,783.00  |  30,490.00   |
@@ -191,26 +190,26 @@ if (!file.exists(filepath)) {
 numeric
 
 |  variable  |    min     |    max     |   median   | n_unique |
-|:----------:|:----------:|:----------:|:----------:|:--------:|
+| :--------: | :--------: | :--------: | :--------: | :------: |
 | time_stamp | 2018-01-01 | 2019-12-31 | 2019-06-22 |   730    |
 
 date
 
 ## Map PurpleAir Sensors Bay Area (2018-2019)
 
-``` r
-purpleairs_sf_filtered <- purpleairs_sf %>% 
-  filter(sensor_index %in% unique(purpleair_data$sensor_index)) %>% 
+```r
+purpleairs_sf_filtered <- purpleairs_sf %>%
+  filter(sensor_index %in% unique(purpleair_data$sensor_index)) %>%
   select(sensor_index)
 
 ca <- counties("California", cb = TRUE)
 num_sensors <- length(unique(purpleairs_sf_filtered$sensor_index))
 
-ggplot() + 
+ggplot() +
   geom_sf(data = ca, color="black", fill="antiquewhite", size=0.25) +
   geom_sf(data = purpleairs_sf_filtered, color = "purple", size = 0.1) +
   coord_sf(xlim = c(-123.8, -121.0), ylim = c(36.9, 39.0)) +
-  theme(panel.background = element_rect(fill = "aliceblue")) + 
+  theme(panel.background = element_rect(fill = "aliceblue")) +
   xlab("Longitude") + ylab("Latitude") +
   ggtitle("PurpleAir Sensors in the Bay Area", subtitle = paste0(num_sensors," sensors in 2018-2019"))
 ```
@@ -219,7 +218,7 @@ ggplot() +
 
 ## Plot Sensors by Month
 
-``` r
+```r
 # Add column for month
 purpleair_data$month <- format(as.Date(purpleair_data$time_stamp), "%Y-%m")
 

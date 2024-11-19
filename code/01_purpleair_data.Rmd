@@ -12,7 +12,7 @@ library(dplyr)         # Data manipulation
 library(sf)            # Spatial data manipulation
 library(ggplot2)       # Data visualization
 library(kableExtra)    # Formatted tables
-library(purpleAirAPI)  # PurpleAir Data API
+library(PurpleAirAPI)  # PurpleAir Data API
 library(leaflet)       # Interactive maps
 library(htmlwidgets)   # HTML widgets
 library(webshot)       # Image conversion

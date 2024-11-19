@@ -1,9 +1,8 @@
-Preprocessing PurpleAir
-================
+# Preprocessing PurpleAir
 
 ## Load required libraries
 
-``` r
+```r
 library(dplyr)      # For data manipulation
 library(data.table) # Faster than dataframes (for big files)
 library(ggplot2)    # Plots
@@ -13,34 +12,34 @@ library(sf)         # Shapefiles
 library(leaflet)    # Interactive maps
 library(kableExtra) # Printing formatted tables
 library(zoo)        # for rolling calculations
-library(purpleAirAPI)
+library(PurpleAirAPI)
 ```
 
 ## Read files
 
-``` r
+```r
 # Read files
 # Read filtered dataset
 purpleair_filtered <- fread(paste0(preprocessing_directory, "/purpleair_filtered_2018-2019.csv"))
 
 epa_data <- read.csv(paste0(preprocessing_directory, "/EPA_airquality.csv"))
 # Download sensor location data
-pa_sensors <- getPurpleairSensors(apiReadKey = api_key) %>% 
+pa_sensors <- getPurpleairSensors(apiReadKey = api_key) %>%
   filter(sensor_index %in% unique(purpleair_filtered$sensor_index))
 # Convert the PurpleAir data frame to an sf object
-pa_sensors <- pa_sensors %>% na.omit() 
+pa_sensors <- pa_sensors %>% na.omit()
 pa_sensors <- st_as_sf(pa_sensors, coords=c("longitude", "latitude"), crs = 4326)
 ```
 
 ## Dataset info
 
-    ## Number of Sensors:  621 
-    ## 
-    ##  Number of Rows:  4146805 
-    ## 
+    ## Number of Sensors:  621
+    ##
+    ##  Number of Rows:  4146805
+    ##
     ##  Date Range:  2018-01-01  to  2019-12-31
 
-``` r
+```r
 # Plot the distribution of PM2.5 levels
 ggplot(purpleair_filtered, aes(x = pm2.5_atm)) +
   geom_histogram(binwidth = 1, fill = "steelblue", color = "black") +
@@ -59,7 +58,7 @@ ggplot(purpleair_filtered, aes(x = pm2.5_atm)) +
 
 ## Plot daily trend for a random day and sensor
 
-``` r
+```r
 # Pick a random sensor and date (full 24 hrs available)
 random_sensor_data <- purpleair_filtered %>%
   group_by(date = date(time_stamp), sensor_index) %>%
@@ -76,8 +75,8 @@ sensor_i_data <- purpleair_filtered %>%
 ggplot(sensor_i_data, aes(x = hour(time_stamp), y = pm2.5_atm)) +
   geom_line() +
   labs(
-    x = "Hour of the Day", 
-    y = "PM2.5 ATM", 
+    x = "Hour of the Day",
+    y = "PM2.5 ATM",
     title = paste0("PM2.5 for Sensor ", as.integer(random_sensor_data$sensor_index), " on ", random_sensor_data$date)
   ) +
   theme_minimal()
@@ -87,7 +86,7 @@ ggplot(sensor_i_data, aes(x = hour(time_stamp), y = pm2.5_atm)) +
 
 ## Number of Active Sensors per Month
 
-``` r
+```r
 monthly_sensors <- purpleair_filtered %>%
   mutate(month = format(time_stamp, "%Y-%m")) %>%
   select(sensor_index, month) %>%
@@ -113,7 +112,7 @@ ggplot(monthly_sensors, aes(x = month, y = count)) +
 
 ## Sensor Activity Distribution
 
-``` r
+```r
 # Summarize the number of active months per sensor
 sensor_activity <- purpleair_filtered %>%
   mutate(month = format(time_stamp, "%Y-%m")) %>%
@@ -153,7 +152,7 @@ ggplot(sensor_activity_distribution, aes(x = active_months, y = cumulative_count
 
 ## Map Sensor Activity
 
-``` r
+```r
 # Join sensor activity data with sensor locations
 sensor_activity <- purpleair_filtered %>%
   mutate(month = format(time_stamp, "%Y-%m")) %>%
@@ -178,10 +177,10 @@ leaflet(activity) %>%
     label = ~paste("Sensor Index:", sensor_index, "<br>Active Months:", active_months)
   ) %>%
   addLegend(
-    "bottomright", 
-    pal = color_palette, 
-    values = ~active_months, 
-    title = "Active Months", 
+    "bottomright",
+    pal = color_palette,
+    values = ~active_months,
+    title = "Active Months",
     opacity = 1
   )
 ```
@@ -190,7 +189,7 @@ leaflet(activity) %>%
 
 ## Plot random sensors
 
-``` r
+```r
 # Plot 4 random sensors
 subset_sensors <- sample(unique(purpleair_filtered$sensor_index), 4)
 filtered_data <- purpleair_filtered %>% filter(sensor_index %in% subset_sensors)
@@ -199,8 +198,8 @@ filtered_data <- purpleair_filtered %>% filter(sensor_index %in% subset_sensors)
 ggplot(filtered_data, aes(x = time_stamp, y = pm2.5_atm, color = sensor_index)) +
   geom_line() +
   labs(
-    x = "Date", 
-    y = "PM2.5 ATM", 
+    x = "Date",
+    y = "PM2.5 ATM",
     title = "PM2.5 Levels Over Time by Sensor"
   ) +
   facet_wrap(~ sensor_index, scales = "fixed", ncol = 2) +
@@ -216,7 +215,7 @@ ggplot(filtered_data, aes(x = time_stamp, y = pm2.5_atm, color = sensor_index)) 
 
 ## Map Air Quality Index using average PM2.5
 
-``` r
+```r
 # https://www.epa.gov/sites/default/files/2016-04/documents/2012_aqi_factsheet.pdf
 avg_pm25 <- purpleair_filtered %>%
   group_by(sensor_index) %>%
@@ -232,21 +231,21 @@ avg_pm25$AQI <- cut(avg_pm25$avg_pm25, breaks = intervals, labels = AQI, include
 pa_avgpm25 <- merge(pa_sensors, avg_pm25, by = "sensor_index")
 
 # Define a color palette function
-color_palette <- colorFactor(palette = c("green", "yellow", "orange", "red", "deeppink3", "darkred"), 
+color_palette <- colorFactor(palette = c("green", "yellow", "orange", "red", "deeppink3", "darkred"),
                              levels = AQI)
 
 # Plot the average PM2.5 for each sensor with leaflet
 aqi_map <- leaflet(pa_avgpm25) %>%
   addCircleMarkers(
-    radius = 2, 
-    color = ~color_palette(AQI), 
-    fillOpacity = 0.7, 
+    radius = 2,
+    color = ~color_palette(AQI),
+    fillOpacity = 0.7,
     stroke = FALSE,
     label = ~paste("Sensor Index:", sensor_index, "<br>Average PM2.5:", round(avg_pm25, 2), "<br>AQI:", AQI)
   ) %>%
   addProviderTiles("CartoDB") %>%
-  addLegend("bottomright", pal = color_palette, values = AQI, 
-            title = "Air Quality Index", opacity = 1) 
+  addLegend("bottomright", pal = color_palette, values = AQI,
+            title = "Air Quality Index", opacity = 1)
 
 aqi_map
 ```

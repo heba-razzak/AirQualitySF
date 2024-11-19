@@ -1,22 +1,21 @@
-Preprocessing Weather
-================
+# Preprocessing Weather
 
 # PurpleAir Sensors & Nearest Weather Station
 
 ## Load required libraries
 
-``` r
+```r
 library(dplyr)      # For data manipulation
 library(data.table) # Faster than dataframes (for big files)
 library(sf)         # For working with spatial data
 library(leaflet)    # For interactive maps
 library(lubridate)  # Dates
-library(purpleAirAPI)
+library(PurpleAirAPI)
 ```
 
 ## Read files
 
-``` r
+```r
 purpleair_data <- fread(paste0(preprocessing_directory,"/purpleair_filtered_2018-2019.csv"))
 weather_stations <- st_read(paste0(weather_directory, "/weather_stations.gpkg"), quiet = TRUE)
 weather_data <- fread(paste0(weather_directory,"/weather.csv"))
@@ -24,7 +23,7 @@ weather_data <- fread(paste0(weather_directory,"/weather.csv"))
 
 ## Get PurpleAir sensors
 
-``` r
+```r
 pa <- getPurpleairSensors(apiReadKey = api_key) %>% na.omit()
 pa_sf <- st_as_sf(pa, coords=c("longitude", "latitude"), crs = 4326)
 bay_area_sf <- st_as_sfc(st_bbox(c(xmin = -123.8, ymin = 36.9, xmax = -121.0, ymax = 39.0)))
@@ -35,14 +34,14 @@ purpleair_sensors <- st_intersection(pa_sf, bay_area_sf)
     ## Warning: attribute variables are assumed to be spatially constant throughout
     ## all geometries
 
-``` r
-filtered_sensors <- purpleair_sensors %>% 
+```r
+filtered_sensors <- purpleair_sensors %>%
   filter(sensor_index %in% unique(purpleair_data$sensor_index))
 ```
 
 ## Visualize weather station counts
 
-``` r
+```r
 # Count rows of weather data for stations and filter out stations with <17,000 rows
 weather_n <- weather_data %>%
   group_by(station) %>%
@@ -63,11 +62,11 @@ leaflet() %>%
   addCircleMarkers(data = filtered_sensors, popup = ~paste("Sensor Index:", sensor_index),
                    fillColor = "#9933CC", fillOpacity = 1, color = "#9933CC", weight = 2, opacity = 1, radius = 2) %>%
   addCircleMarkers(data = weather_stations_n, popup = ~paste("Weather Station:", id, "<br>Count:", count),
-                   fillColor = ~station_palette(count), fillOpacity = 1, color = ~station_palette(count), 
+                   fillColor = ~station_palette(count), fillOpacity = 1, color = ~station_palette(count),
                    weight = 3, opacity = 1, radius = 3) %>%
   addProviderTiles("CartoDB") %>%
-  addLegend(colors = c("yellow", "red"), 
-            labels = c("Count >= 17000", "Count < 17000"), 
+  addLegend(colors = c("yellow", "red"),
+            labels = c("Count >= 17000", "Count < 17000"),
             title = "Weather Station Data Count", position = "bottomleft") %>%
   setView(lng = -122.44, lat = 37.76, zoom = 7)
 ```
@@ -76,7 +75,7 @@ leaflet() %>%
 
 ## Filter weather data and save
 
-``` r
+```r
 # Filter out stations with <17,000 rows
 keep_stations <- weather_n %>% filter(count >= 17000)
 
@@ -91,7 +90,7 @@ write.csv(filtered_weather_data, paste0(preprocessing_directory, "/weather_filte
 
 ## Nearest weather stations
 
-``` r
+```r
 # Filter weather stations shapefile
 filtered_weather_stations_sf <- weather_stations %>%
   filter(id %in% keep_stations$station)
@@ -107,21 +106,21 @@ filtered_sensors$weatherstation <- filtered_weather_stations_sf$id[nearest_stati
 filtered_sensors$station_distance <- as.numeric(distances)
 
 # Add station elevation
-filtered_weather_stations <- filtered_weather_stations_sf %>% 
-  select(id, station_elevation = elevation) %>% 
+filtered_weather_stations <- filtered_weather_stations_sf %>%
+  select(id, station_elevation = elevation) %>%
   mutate(station_elevation = round(station_elevation, 2)) %>% st_drop_geometry()
 filtered_sensors <- filtered_sensors %>%
   left_join(filtered_weather_stations, by = c("weatherstation" = "id"))
 
 # Save PurpleAir sensors and weather stations shapefile
-st_write(filtered_sensors, 
+st_write(filtered_sensors,
          paste0(preprocessing_directory, "/pasensors_weatherstations.gpkg"),
          driver = "GPKG", append = FALSE, quiet = TRUE)
 ```
 
 ## Map PurpleAir Sensors and nearest Weather Stations
 
-``` r
+```r
 # Convert weather stations to a data frame
 weather_stations_df <- as.data.frame(st_coordinates(filtered_weather_stations_sf))
 colnames(weather_stations_df) <- c("wlon", "wlat")
@@ -160,8 +159,8 @@ leaflet() %>%
   addProviderTiles("CartoDB") %>%
   addLayersControl(overlayGroups = c("PurpleAir Sensors and Nearest Weather Stations"),
                    options = layersControlOptions(collapsed = FALSE)) %>%
-  addLegend(colors = c("#9933CC", "blue"), 
-            labels = c("PurpleAir Sensors", "Weather Stations"), 
+  addLegend(colors = c("#9933CC", "blue"),
+            labels = c("PurpleAir Sensors", "Weather Stations"),
             title = "Legend", position = "bottomleft") %>%
   setView(lng = -122.44, lat = 37.76, zoom = 10)
 ```

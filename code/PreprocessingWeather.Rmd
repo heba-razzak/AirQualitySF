@@ -19,7 +19,7 @@ library(data.table) # Faster than dataframes (for big files)
 library(sf)         # For working with spatial data
 library(leaflet)    # For interactive maps
 library(lubridate)  # Dates
-library(purpleAirAPI)
+library(PurpleAirAPI)
 ```
 
 ## Read files

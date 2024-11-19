@@ -190,14 +190,211 @@ if (!file.exists(filepath)) {
 ```
 
 ```{r, echo = FALSE}
-filepath <- file.path("data", "raw", "bayarea_osm_roads.gpkg")
-osm_roads <- st_read(filepath, quiet = TRUE)
+filepath <- 
+osm_roads <- st_read(file.path("data", "raw", "bayarea_osm_roads.gpkg"), quiet = TRUE)
+
+
+uber <- fread(file.path("data", "processed", "traffic_old.csv"))
+
 ```
+
+```{r, osm-roads-dictionary}
+desc <- data_description(osm_roads, 
+                         var_desc = c(
+                           "osm_id" = "",
+                           "name" = "",
+                           "highway" = "",
+                           "lanes" = "",
+                           "maxspeed" = "",
+                           "sensor_index" = "Unique identifier for PurpleAir sensors",
+                           "geometry" = "Spatial coordinates"
+                         ))
+
+data_dictionary(osm_roads, 
+                data_title = "PurpleAir Sensors in Bay Area", 
+                descriptions = desc, 
+                hide = c("top_n", "NA_Percentage", "NA_Count", "n_unique"))
+
+# Show example records
+knitr::kable(head(osm_roads, 3),
+             row.names = FALSE,
+             format = "markdown",
+             caption = "Example Sensor Records")
+```
+
+```{r}
+osm_roads
+```
+
+
+```{r}
+# COUNT OF HIGHWAY TYPES FOR OSM ROADS
+osm_roads %>% st_drop_geometry() %>% select(highway) %>% count(highway) %>% arrange(desc(n))
+```
+
+Categorize road types: highway, urban, local, other
+
+```{r}
+osm_road_types <- osm_roads %>%
+  mutate(road_type = case_when(
+    highway %in% c("motorway", "motorway_link", "trunk", "trunk_link",
+                   "primary", "primary_link"
+                   ) ~ "highway",
+    highway %in% c("secondary", "secondary_link", "tertiary", "tertiary_link", 
+                   "residential", "unclassified"
+                   ) ~ "urban",
+    highway %in% c("service", "track", "footway", "path", "cycleway", "steps", 
+                   "pedestrian", "living_street", "corridor", "bridleway"
+                   ) ~ "local",
+    TRUE ~ "other"
+  ))
+```
+
+```{r}
+osm_road_types %>% st_drop_geometry() %>% 
+  select(road_type, maxspeed) %>% group_by(road_type) %>%
+  count(maxspeed) %>% arrange(desc(n))
+```
+
+```{r}
+osm_road_types %>% st_drop_geometry() %>% 
+  select(road_type, lanes) %>% group_by(road_type) %>%
+  count(lanes) %>% arrange(desc(n))
+```
+
+
+###########
+ROADS STEPS
+##########
+
+
+Standardize speed limits:
+
+```{r}
+osm_roads <- osm_roads %>%
+  mutate(
+    speed_numeric = case_when(
+      grepl("mph", maxspeed) ~ as.numeric(gsub("[^0-9]", "", maxspeed)),
+      !is.na(maxspeed) ~ as.numeric(maxspeed),
+      TRUE ~ NA_real_
+    )
+  )
+```
+
+Calculate road density per sensor:
+
+
+```{r}
+road_density <- osm_roads %>%
+  group_by(sensor_index, road_category) %>%
+  summarize(
+    road_length = sum(st_length(geom)),
+    road_count = n()
+  )
+```
+
+Save processed data:
+
+```{r}
+write_sf(osm_roads, file.path("data", "processed", "roads_categorized.gpkg"))
+write.csv(road_density, file.path("data", "processed", "road_density.csv"))
+```
+
+
+###########
+ROADS STEPS END
+##########
+
+###############
+ROADS OLD CODE 
+###############
+
+Highway meanings
+https://taginfo.openstreetmap.org/keys/highway#values
+https://taginfo.geofabrik.de/north-america:us:california:norcal/keys/landuse#overview
+
+Get highway colors from osm to split them
+
+
+Map of OpenStreetMap Roads
+
+```{r, plot-roads, results = FALSE, eval = FALSE, echo = FALSE}
+img_path <- file.path("../docs", "plots", "roads-map.png")
+if (!file.exists(img_path)) {
+  bayarea_roads <- st_read(file.path("data", "raw", "bayarea_roads_osm.gpkg"), quiet = TRUE)
+  map_path <- file.path("../docs", "maps", "roads-map.html")
+  m <- leaflet() %>%
+    addPolylines(data = bayarea_roads,
+                 color = "#DD94A1", opacity = 0.5, weight = 1) %>%
+    addProviderTiles("CartoDB") %>%
+    setView(lng = -122.4194, lat = 37.7749, zoom = 12)
+  saveWidget(m, file = map_path)
+  webshot(map_path, file = img_path)
+}
+knitr::include_graphics(img_path)
+```
+
+
+
+```{r, eval = FALSE, echo = FALSE}
+## Select small area of San Francisco to map
+bbox <- c(xmin = -122.46, ymin = 37.76, xmax = -122.42, ymax = 37.72)
+bbox_polygon <- st_as_sfc(st_bbox(bbox))
+st_crs(bbox_polygon) <- 4326
+sanfran_roads <- st_intersection(bayarea_roads, bbox_polygon)
+
+major_roads <- c("motorway", "motorway_link", "trunk", "primary")
+
+# group road types to major and minor
+osm_roads_pa <- bayarea_roads %>%
+mutate(highway = ifelse(is.na(highway), "NA", highway)) %>%
+mutate(road_type = ifelse(highway %in% major_roads, "Major", "Minor"),
+road_length = round(st_length(geom),2)) 
+
+# Remove units from road_length
+# attributes(road_lengths$road_length) = NULL
+
+# Define colors for road types
+road_colors <- colorFactor(c("cornflowerblue", "lightblue"), domain = c("Major", "Minor"))
+building_colors <- colorFactor(c("orangered", "darkorange", "peachpuff", "papayawhip"), 
+domain = c("Other", "Apartments", "House", "Undefined"))
+```
+
+###############
+ROADS OLD CODE END
+###############
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 ```{r, echo = FALSE}
 filepath <- file.path("data", "raw", "bayarea_osm_land.gpkg")
 osm_land <- st_read(filepath, quiet = TRUE)
 ```
+
+
+
+
+
+
+
+
+
+
+
+
 
 Frequency of osm keys and values near sensors
 
@@ -294,12 +491,6 @@ Select columns with at least 90% data
 x <- x %>% select(where(~ sum(is.na(.)) / nrow(x) < 0.9))
 ```
 
-Highway meanings
-https://taginfo.openstreetmap.org/keys/highway#values
-https://taginfo.geofabrik.de/north-america:us:california:norcal/keys/landuse#overview
-
-Get highway colors from osm to split them
-
 
 Download Land Use
 
@@ -308,9 +499,13 @@ landuse:	residential,	industrial,	farmland
 boundary:	protected_area
 leisure:	park
 waterway:	stream
+
+
 check what to get from here
 https://www.openstreetmap.org/relation/13070397#map=14/37.68559/-122.42435
 https://osmlanduse.org/#10.716666666666669/-122.21682/37.73751/0/
+
+
 OSM keys used for classification
 Classification of the landuse/landcover classes are similar to the classification level 2 of the CORINE Landcover classes.
 The following OSM keys were used to form the respective class:
@@ -357,24 +552,6 @@ water,  riverbank,  reservoir,  basin,  dock,  canal,  pond
 
 
 
-
-Map of OpenStreetMap Roads
-
-```{r, plot-roads, results = FALSE, eval = FALSE, echo = FALSE}
-img_path <- file.path("../docs", "plots", "roads-map.png")
-if (!file.exists(img_path)) {
-  bayarea_roads <- st_read(file.path("data", "raw", "bayarea_roads_osm.gpkg"), quiet = TRUE)
-  map_path <- file.path("../docs", "maps", "roads-map.html")
-  m <- leaflet() %>%
-    addPolylines(data = bayarea_roads,
-                 color = "#DD94A1", opacity = 0.5, weight = 1) %>%
-    addProviderTiles("CartoDB") %>%
-    setView(lng = -122.4194, lat = 37.7749, zoom = 12)
-  saveWidget(m, file = map_path)
-  webshot(map_path, file = img_path)
-}
-knitr::include_graphics(img_path)
-```
 
 Map of OpenStreetMap Buildings
 

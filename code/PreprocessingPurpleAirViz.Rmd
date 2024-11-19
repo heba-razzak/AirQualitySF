@@ -21,7 +21,7 @@ library(sf)         # Shapefiles
 library(leaflet)    # Interactive maps
 library(kableExtra) # Printing formatted tables
 library(zoo)        # for rolling calculations
-library(purpleAirAPI)
+library(PurpleAirAPI)
 ```
 
 ## Read files

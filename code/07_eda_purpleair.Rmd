@@ -18,7 +18,7 @@ library(sf)            # Shapefiles
 library(leaflet)       # Interactive maps
 library(kableExtra)    # Printing formatted tables
 library(zoo)           # for rolling calculations
-library(purpleAirAPI)  # Download PurpleAir Data
+library(PurpleAirAPI)  # Download PurpleAir Data
 library(tidyr)         # Reshape data
 library(DataOverviewR) # Data dictionary and summary
 library(reshape2)      # melt correlations
