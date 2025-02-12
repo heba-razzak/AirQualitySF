@@ -103,6 +103,12 @@ osm_roads_sf <- st_intersection(osm_roads_sf, bbox_polygon)
 ```
 
 ```{r}
+landuse_colors <- colorFactor(
+  palette = c("#90EE90", "#FF0000", "#228B22", "#800080", 
+              "#D3D3D3", "#D2B48C", "#FFA500", "#0000FF"),
+  domain = c("artificial_green", "industrial", "natural_green", "other", 
+             "residential", "sparse", "urban", "water"))
+
 color_palette <- colorNumeric(palette = "YlOrRd", domain = osm_roads_sf$free_flow_speed)
 
 leaflet() %>%
