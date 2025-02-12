@@ -1,0 +1,216 @@
+---
+title: "Data Integration" 
+output: github_document
+knit: (function(input, ...) {rmarkdown::render(input, output_dir = "../docs", )})
+---
+
+```{r, setup, echo=FALSE}
+knitr::opts_chunk$set(fig.path = "../docs/plots/")
+```
+
+Load required libraries
+
+```{r, load-libraries, message = FALSE, warning = FALSE}
+library(lubridate)    # For dates
+library(dplyr)        # Data manipulation
+library(tidyr)        # pivot
+library(ggplot2)      # Data visualization
+library(data.table)   # Working with large files
+library(xgboost)      # XGBoost model
+library(caret)        # Preprocessing
+library(caTools)
+library(lightgbm)
+# library(cvms)
+```
+
+```{r, load-dataset}
+dataset <- fread(file.path("data", "processed", "final_dataset.csv"))
+```
+
+```{r}
+# Add engineered features
+dataset[, `:=`(
+  # Time features
+  is_rush_hour = as.numeric(hour %in% c(7,8,9,16,17,18)),
+  is_weekend = as.numeric(dow %in% c(1,7)),
+  season = fcase(
+    month %in% c(12,1,2), 1,
+    month %in% c(3,4,5), 2,
+    month %in% c(6,7,8), 3,
+    month %in% c(9,10,11), 4
+  ),
+  
+  # Weather interactions
+  temp_humid = pa_temp * pa_humidity,
+  wind_speed_direction = wind_speed * cos(wind_direction),
+  
+  # Traffic-time interactions
+  rush_congestion = mean_congestion_major * (hour %in% c(7,8,9,16,17,18)),
+  
+  # Fire-weather interactions
+  fire_wind = ifelse(f_sz != 0, 
+                     wind_speed * cos((wind_direction - f_dir) * pi/180), 
+                     0),
+  # Cyclical transformations for hour
+  hour_sin = sin(2 * pi * hour / 24),
+  hour_cos = cos(2 * pi * hour / 24),
+  
+  # Cyclical transformations for month
+  month_sin = sin(2 * pi * month / 12),
+  month_cos = cos(2 * pi * month / 12)
+)]
+```
+
+```{r}
+# Create two feature sets: with and without early lags
+features_with_lags <- setdiff(names(dataset), 
+                              c("time_stamp", "sensor_index", "pm2.5_alt"))
+
+```
+
+
+```{r}
+# Sort and split data
+dataset <- dataset[order(time_stamp)]
+split_index <- floor(0.7 * nrow(dataset))
+split_time <- dataset$time_stamp[split_index]
+# Create training and test sets
+train_data <- dataset[time_stamp <= split_time]
+test_data <- dataset[time_stamp > split_time]
+```
+
+```{r}
+# Convert to matrix format for LightGBM
+train_matrix <- as.matrix(train_data[, features_with_lags, with = FALSE])
+test_matrix <- as.matrix(test_data[, features_with_lags, with = FALSE])
+train_labels <- train_data$`pm2.5_alt`  # Replace 'pm2.5_alt' with your target column name
+test_labels <- test_data$`pm2.5_alt`    # Replace 'pm2.5_alt' with your target column name
+```
+
+
+```{}
+# Prepare LightGBM datasets
+dtrain <- lgb.Dataset(data = train_matrix, label = train_labels)
+```
+
+```{}
+# Define LightGBM parameters
+params <- list(
+  objective = "regression",
+  metric = "rmse",
+  learning_rate = 0.1,
+  num_leaves = 31,         # Equivalent to max_depth of ~6
+  max_depth = 6,
+  feature_fraction = 0.8,  # Like colsample_bytree in XGBoost
+  bagging_fraction = 0.8,  # Like subsample in XGBoost
+  bagging_freq = 1,        # Perform bagging every iteration
+  min_data_in_leaf = 20,   # Minimum samples per leaf
+  lambda_l1 = 0.0,         # L1 regularization
+  lambda_l2 = 1.0          # L2 regularization
+)
+
+> # Calculate RMSE
+> rmse <- sqrt(mean((predictions - test_labels)^2))
+> print(paste("LightGBM RMSE:", round(rmse, 4)))
+[1] "LightGBM RMSE: 4.5019"
+>
+> # Calculate R^2
+> ss_total <- sum((test_labels - mean(test_labels))^2)
+> ss_residuals <- sum((test_labels - predictions)^2)
+> r_squared <- 1 - (ss_residuals / ss_total)
+> print(paste("LightGBM R^2:", round(r_squared, 4)))
+[1] "LightGBM R^2: 0.6304"
+```
+
+```{}
+# Train LightGBM model
+lgb_model <- lgb.train(
+  params = params,
+  data = dtrain,
+  nrounds = 500,                  # Maximum boosting iterations
+  valids = list(test = dtrain),   # Validation set
+  early_stopping_rounds = 50,     # Stop early if no improvement
+  verbose = 0                     # Don't show progress
+)
+```
+
+```{}
+# Predict on the test dataset
+predictions <- predict(lgb_model, test_matrix)
+
+# Calculate RMSE
+rmse <- sqrt(mean((predictions - test_labels)^2))
+print(paste("LightGBM RMSE:", round(rmse, 4)))
+
+# Calculate R^2
+ss_total <- sum((test_labels - mean(test_labels))^2)
+ss_residuals <- sum((test_labels - predictions)^2)
+r_squared <- 1 - (ss_residuals / ss_total)
+print(paste("LightGBM R^2:", round(r_squared, 4)))
+```
+
+```{r}
+dtrain <- lgb.Dataset(
+  data = train_matrix,
+  label = train_labels,
+  params = list(feature_pre_filter = FALSE)  # Add this line
+)
+```
+
+```{r}
+# Define parameter grid
+param_grid <- expand.grid(
+  learning_rate = c(0.05, 0.1),
+  num_leaves = c(15, 31, 63),
+  max_depth = c(4, 6, 8),
+  feature_fraction = c(0.6, 0.8),
+  bagging_fraction = c(0.6, 0.8),
+  min_data_in_leaf = c(10, 20, 30),
+  lambda_l1 = c(0, 1),
+  lambda_l2 = c(0, 1)
+)
+
+# Initialize a dataframe to store results
+results <- data.frame()
+
+# Loop through parameter grid
+for (i in 1:nrow(param_grid)) {
+  # Extract parameter combination
+  params <- as.list(param_grid[i, ])
+  params$objective <- "regression"
+  params$metric <- "rmse"
+  # params$feature_pre_filter <- FALSE  # Add this line
+  
+  # Train LightGBM model
+  lgb_model <- lgb.train(
+    params = params,
+    data = dtrain,
+    nrounds = 500,                  # Maximum boosting iterations
+    valids = list(test = dtrain),   # Validation set
+    early_stopping_rounds = 50,     # Stop early if no improvement
+    verbose = 0                     # Suppress output
+  )
+  
+  # Make predictions
+  predictions <- predict(lgb_model, test_matrix)
+  
+  # Calculate RMSE
+  rmse <- sqrt(mean((predictions - test_labels)^2))
+  
+  # Save results
+  results <- rbind(
+    results,
+    c(params, rmse = rmse)
+  )
+}
+
+# Convert results to a dataframe
+results <- as.data.frame(results)
+
+# Sort results by RMSE
+results <- results %>% arrange(rmse)
+
+# View the best parameter combination
+print(head(results))
+```
+

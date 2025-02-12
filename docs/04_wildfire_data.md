@@ -103,13 +103,13 @@ if (!file.exists(filepath)) {
   write_sf(fire_sf, file.path("data", "processed", "wildfires.shp"), quiet = TRUE)
   write.csv(fire_data %>% st_drop_geometry(), file.path("data", "processed", "wildfires.csv"), row.names = FALSE)
   
-  # Filter for California, 2018, 2019 (& 5 days before 2018) 
+  # Filter for California, 2018, 2019 (& keep 2017 to include buffer for duration) 
   fire_sf_filtered <- fire_data %>%
     filter(YEAR_ %in% c(2017, 2018, 2019), STATE == "CA") %>% 
     select(fire_id)
   
   # Get distances between purpleAir sensors and fires (within 100km)
-  pa_sf <- st_transform(pa_sf, crs = 3310)
+  pa_sf <- st_transform(pa_sf, crs = 3310) # California Albers (meters) for accurate distances
   fire_sf_filtered <- st_transform(fire_sf_filtered, crs = 3310)
   pa_fire_distances <- st_distance(pa_sf, fire_sf_filtered, by_element = FALSE)
   distances_df <- as.data.frame(as.table(pa_fire_distances))
@@ -121,11 +121,41 @@ if (!file.exists(filepath)) {
     ) %>%
     select(sensor_index, fire_id, fire_distance) %>%
     mutate(fire_distance = drop_units(fire_distance)) %>% 
-    filter(fire_distance <= 100000)
+    filter(fire_distance <= 150000)
+  
+  ###
+  # Get direction (bearing) between PurpleAir sensors and fire perimeters
+  nearest_points <- st_nearest_points(pa_sf, fire_sf_filtered)
+  
+  # Convert to points for start (sensor) and end (nearest fire point)
+  nearest_coords <- lapply(nearest_points, function(line) {
+    pts <- st_coordinates(line)
+    return(data.frame(
+      start_x = pts[1,1], 
+      start_y = pts[1,2],
+      end_x = pts[2,1], 
+      end_y = pts[2,2]
+    ))
+  }) %>% bind_rows()
+  
+  # Add IDs and calculate bearing
+  pa_fire_dist <- pa_fire_dist %>%
+    bind_cols(nearest_coords) %>%
+    mutate(
+      fire_bearing = bearing(
+        cbind(start_x, start_y), 
+        cbind(end_x, end_y)
+      ),
+      fire_direction = round((fire_bearing + 360) %% 360)
+    ) %>%
+    select(sensor_index, fire_id, fire_distance, fire_direction)
+  
+  ###
   
   # Get direction (bearing) between PurpleAir sensors and fires
+  # Calculate bearings in WGS84 (lat/lon)
   fire_coords <- st_make_valid(fire_sf_filtered) %>%  st_transform(crs = 4326) %>% 
-    st_centroid() %>% st_coordinates() %>%  as.data.frame() %>% 
+    st_centroid() %>% st_coordinates() %>% as.data.frame() %>% 
     mutate(fire_id = fire_sf_filtered$fire_id) %>% select(fire_id, X, Y) %>%
     rename(fire_x = X, fire_y = Y)
   
@@ -146,8 +176,6 @@ if (!file.exists(filepath)) {
   write.csv(wildfires_purpleair, filepath, row.names = FALSE)
 }
 ```
-
-    ## Warning: st_centroid assumes attributes are constant over geometries
 
 ------------------------------------------------------------------------
 

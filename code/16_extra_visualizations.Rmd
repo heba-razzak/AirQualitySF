@@ -1,0 +1,238 @@
+---
+title: "Feature Engineering" 
+output: github_document
+knit: (function(input, ...) {rmarkdown::render(input, output_dir = "../docs", )})
+---
+
+```{r, setup, echo=FALSE}
+knitr::opts_chunk$set(fig.path = "../docs/plots/")
+```
+
+Load required libraries
+
+```{r, load-libraries, message = FALSE, warning = FALSE}
+library(dplyr)         # Data manipulation
+library(data.table)    # Working with large files
+```
+
+
+```{}
+osm_land <- st_read(file.path("data", "raw", "bayarea_osm_land.gpkg"), quiet = TRUE, promote_to_multi = FALSE)
+
+osm_lands <- osm_land %>%
+  mutate(landtype = case_when(
+    # Industrial
+    osm_value %in% c("industrial", "construction", "railway", "landfill", 
+                     "harbour", "port", "lock", "marina", "brownfield", 
+                     "quarry", "military", "special_use") ~ "Industrial",
+    # Urban
+    osm_value %in% c("commercial", "retail", "garages", "common", "civic", 
+                     "swimming_pool", "fitness_centre", "bowling_alley", 
+                     "miniature_golf", "education", "religious", "institutional") ~ "Urban",
+    # Residential
+    osm_value %in% c("residential", "outdoor_seating") ~ "Residential",
+    # Natural Green
+    osm_value %in% c("forest", "wood", "scrub", "heath", "grassland", "meadow", 
+                     "greenfield", "nature_reserve", "national_park", "conservation", 
+                     "protected_area", "cliff", "shrub", "shrubbery") ~ "Natural Green",
+    # Artificial Green
+    osm_value %in% c("park", "recreation_ground", "pitch", "garden", 
+                     "sports_centre", "sports_hall", "stadium", "playground", 
+                     "golf_course", "village_green", "allotments", "cemetery", 
+                     "zoo", "track", "raceway", "plant_nursery", "horse_riding", 
+                     "fishing") ~ "Artificial Green",
+    # Water
+    osm_value %in% c("water", "riverbank", "reservoir", "basin", "dock", "canal", 
+                     "pond", "salt_pond", "tidal", "marsh", "wetland", "reef", 
+                     "bay", "coastline") ~ "Water",
+    # Sparse
+    osm_value %in% c("sand", "scree", "beach", "mud", "glacier", "rock", 
+                     "bare_rock", "farmland", "farm", "farmyard", "peninsula") ~ "Sparse",
+    # Missing
+    is.na(osm_value) ~ "Missing",
+    # Default
+    TRUE ~ "Other"
+  ))
+
+landuse_colors <- colorFactor(
+  palette = c("#90EE90", "#5F5F5F", "#000000", "#228B22", 
+              "#E6ADEC", "#D3D3D3", "#D2B48C", "#5A8082", "#0000FF"),
+  domain = c("Artificial Green", "Industrial", "Missing", "Natural Green", 
+             "Other", "Residential", "Sparse", "Urban", "Water"))
+
+bbox <- c(xmin = -123, ymin = 39, xmax = -122, ymax = 38)
+bbox_polygon <- st_as_sfc(st_bbox(bbox))
+st_crs(bbox_polygon) <- 4326
+pa_sf_map <- st_intersection(pa_sf, bbox_polygon)
+osm_landuse1 <- osm_lands %>% filter(sensor_index %in% pa_sf_map$sensor_index)
+
+land_dissolved <- osm_landuse1 %>%
+  st_make_valid() %>%
+  group_by(sensor_index, landtype) %>%
+  summarize(geometry = st_union(geom), .groups = 'drop')
+```
+
+```{r}
+# Read files
+stations_sf <- st_read(file.path("data", "raw", "stations_sf.gpkg"), quiet = TRUE)
+purpleairs_buffers <- st_read(file.path("data", "raw", "purpleairs_buffers.gpkg"), quiet = TRUE)
+closest_station <- st_read(file.path("data", "raw", "closest_station.gpkg"), quiet = TRUE)
+pa_sensors <- read.csv(file.path("data", "raw", "pa_sensors.csv"))
+pa_sf <- st_as_sf(pa_sensors, coords=c("longitude", "latitude"), crs = 4326) %>% select(sensor_index)
+wildfires_purpleair <- read.csv(file.path("data", "processed", "wildfires_purpleair.csv"))
+fireids <- wildfires_purpleair %>% filter(fire_distance <= 200) %>% pull(fire_id)
+wildfires <- st_read(file.path("data", "processed", "wildfires.shp"), quiet = TRUE)
+fireids <- read.csv(file.path("data", "processed", "wildfires_purpleair_dates.csv")) %>% 
+  pull(fire_id) %>% unique()
+wildfires2 <- wildfires %>% filter(fire_id %in% fireids)
+free_flow_speed <- fread(file.path("data", "processed", "Uber", "free_flow_speeds.csv"))
+osm_roads <- fread(file.path("data", "processed", "osm_roads.csv"))
+osm_roads_sf <- st_read(file.path("data", "raw", "bayarea_osm_roads.gpkg"), quiet = TRUE) %>% 
+  mutate(osm_id = as.integer(osm_id)) %>% select(osm_id)
+osm_roads_sf <- left_join(osm_roads_sf, osm_roads, by = "osm_id") %>% select(osm_id, highway, road_type)
+osm_roads_sf <- left_join(osm_roads_sf, free_flow_speed, by = c("osm_id"="osm_way_id"))
+
+
+bbox <- c(xmin = -122.46, ymin = 37.76, xmax = -122.42, ymax = 37.72)
+bbox_polygon <- st_as_sfc(st_bbox(bbox))
+st_crs(bbox_polygon) <- 4326
+
+osm_roads_sf <- st_intersection(osm_roads_sf, bbox_polygon)
+# land_dissolved1 <- st_intersection(land_dissolved, bbox_polygon)
+
+```
+
+```{r}
+color_palette <- colorNumeric(palette = "YlOrRd", domain = osm_roads_sf$free_flow_speed)
+
+leaflet() %>%
+  addPolygons(data = purpleairs_buffers, 
+              popup = ~paste("sensor_index:", sensor_index), 
+              label = ~paste("sensor_index:", sensor_index),
+              color = "#AA44AA", opacity = 0.5, weight = 1, fillOpacity = 0) %>%
+  addPolygons(data = land_dissolved,
+              fillColor = ~landuse_colors(landtype), fillOpacity = 0.7, opacity = 0,
+              popup = ~paste("Landuse:", landtype)) %>%
+  addLegend(pal = landuse_colors, values = land_dissolved$landtype, title = "Land Use") %>%
+  addPolygons(data = wildfires2, 
+              # popup = ~paste("sensor_index:", sensor_index), label = ~paste("sensor_index:", sensor_index),
+              color = "orange", opacity = 0.5, weight = 1,
+              fillColor = "orange", fillOpacity = 0.2) %>%
+  addPolylines(data = closest_station, color = "lightblue", weight = 0.5, opacity = 1) %>%
+  addPolylines(data = osm_roads_sf, color = free_flow_speed) %>%
+  addCircleMarkers(data = pa_sf, popup = ~paste("Sensor Index:", sensor_index),
+                   fillColor = "#9933CC", fillOpacity = 1, 
+                   color = "#9933CC", weight = 2, opacity = 1, radius = 1) %>%
+  addCircleMarkers(data = stations_sf, popup = ~paste("Weather Station:", station),
+                   fillColor = "#d90429", fillOpacity = 1, 
+                   color = "#d90429", weight = 3, opacity = 1, radius = 3) %>%
+  addProviderTiles("CartoDB") %>%
+  addLegend(colors = c("#9933CC", "#d90429", "orange"),
+            labels = c("PurpleAir Sensors", "Weather Stations", "Wildfire"),
+            title = "Legend", position = "bottomleft") %>%
+  setView(lng = -122.4, lat = 38.3, zoom = 11)
+
+```
+
+
+```{r}
+# zoomed out viz (weather and purple air)
+
+img_path <- file.path("../docs", "plots", "pa-weather-fire-map.png")
+map_path <- file.path("../docs", "maps", "pa-weather-fire-map.html")
+m <- leaflet() %>%
+  addPolygons(data = purpleairs_buffers, 
+              popup = ~paste("sensor_index:", sensor_index), 
+              label = ~paste("sensor_index:", sensor_index),
+              color = "#AA44AA", opacity = 0.5, weight = 1, fillOpacity = 0) %>%
+  addPolygons(data = land_dissolved,
+              fillColor = ~landuse_colors(landtype), fillOpacity = 0.7, opacity = 0,
+              popup = ~paste("Landuse:", landtype)) %>%
+  addPolygons(data = wildfires2, 
+              color = "orange", opacity = 0.5, weight = 1,
+              fillColor = "orange", fillOpacity = 0.2) %>%
+  addPolylines(data = closest_station, color = "lightblue", weight = 0.5, opacity = 1) %>%
+  addCircleMarkers(data = pa_sf, popup = ~paste("Sensor Index:", sensor_index),
+                   fillColor = "#9933CC", fillOpacity = 1, 
+                   color = "#9933CC", weight = 2, opacity = 1, radius = 1) %>%
+  addCircleMarkers(data = stations_sf, popup = ~paste("Weather Station:", station),
+                   fillColor = "#d90429", fillOpacity = 1, 
+                   color = "#d90429", weight = 3, opacity = 1, radius = 3) %>%
+  addProviderTiles("CartoDB") %>%
+  addLegend(colors = c("#9933CC", "#d90429", "orange"),
+            labels = c("PurpleAir Sensors", "Weather Stations", "Wildfire"),
+            title = "Legend", position = "bottomleft") %>%
+  setView(lng = -122.2, lat = 38, zoom = 8)
+saveWidget(m, file = map_path)
+webshot(map_path, file = img_path)
+
+knitr::include_graphics(img_path)
+```
+
+```{r}
+# zoomed in viz (weather, osm, speed, purple air)
+
+img_path <- file.path("../docs", "plots", "pa-weather-fire-osm-map.png")
+map_path <- file.path("../docs", "maps", "pa-weather-fire-osm-map.html")
+m <- leaflet() %>%
+  addPolygons(data = purpleairs_buffers, 
+              popup = ~paste("sensor_index:", sensor_index), 
+              label = ~paste("sensor_index:", sensor_index),
+              color = "#AA44AA", opacity = 0.5, weight = 1, fillOpacity = 0) %>%
+  addPolygons(data = land_dissolved,
+              fillColor = ~landuse_colors(landtype), fillOpacity = 0.7, opacity = 0,
+              popup = ~paste("Landuse:", landtype)) %>%
+  addLegend(pal = landuse_colors, values = land_dissolved$landtype, title = "Land Use") %>%
+  addPolygons(data = wildfires2, 
+              color = "orange", opacity = 0.5, weight = 1,
+              fillColor = "orange", fillOpacity = 0.2) %>%
+  addPolylines(data = closest_station, color = "lightblue", weight = 0.5, opacity = 1) %>%
+  addCircleMarkers(data = pa_sf, popup = ~paste("Sensor Index:", sensor_index),
+                   fillColor = "#9933CC", fillOpacity = 1, 
+                   color = "#9933CC", weight = 2, opacity = 1, radius = 1) %>%
+  addCircleMarkers(data = stations_sf, popup = ~paste("Weather Station:", station),
+                   fillColor = "#d90429", fillOpacity = 1, 
+                   color = "#d90429", weight = 3, opacity = 1, radius = 3) %>%
+  addProviderTiles("CartoDB") %>%
+  # addLegend(colors = c("#9933CC", "#d90429", "orange"),
+  #           labels = c("PurpleAir Sensors", "Weather Stations", "Wildfire"),
+  #           title = "Legend", position = "bottomleft") %>%
+  setView(lng = -122.2, lat = 38, zoom = 13)
+# saveWidget(m, file = map_path)
+# webshot(map_path, file = img_path)
+# 
+# knitr::include_graphics(img_path)
+m
+```
+
+
+
+```{r}
+# original viz
+m <- leaflet() %>%
+  addPolygons(data = purpleairs_buffers, 
+              popup = ~paste("sensor_index:", sensor_index), 
+              label = ~paste("sensor_index:", sensor_index),
+              color = "#AA44AA", opacity = 0.5, weight = 1,
+              fillColor = "#dec9e9", fillOpacity = 0.2) %>%
+  addPolygons(data = wildfires2, 
+              # popup = ~paste("sensor_index:", sensor_index), label = ~paste("sensor_index:", sensor_index),
+              color = "orange", opacity = 0.5, weight = 1,
+              fillColor = "orange", fillOpacity = 0.2) %>%
+  addPolylines(data = closest_station, color = "lightblue", weight = 0.5, opacity = 1) %>%
+  addCircleMarkers(data = pa_sf, popup = ~paste("Sensor Index:", sensor_index),
+                   fillColor = "#9933CC", fillOpacity = 1, 
+                   color = "#9933CC", weight = 2, opacity = 1, radius = 1) %>%
+  addCircleMarkers(data = stations_sf, popup = ~paste("Weather Station:", station),
+                   fillColor = "#d90429", fillOpacity = 1, 
+                   color = "#d90429", weight = 3, opacity = 1, radius = 3) %>%
+  addProviderTiles("CartoDB") %>%
+  addLegend(colors = c("#9933CC", "#d90429"),
+            labels = c("PurpleAir Sensors", "Weather Stations"),
+            title = "Legend", position = "bottomleft") %>%
+  setView(lng = -122.44, lat = 37.76, zoom = 10)
+
+m
+```
+
+

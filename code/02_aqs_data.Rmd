@@ -6,12 +6,7 @@ knit: (function(input, ...) {rmarkdown::render(input, output_dir = "../docs", )}
 
 ### United States Environmental Protection Agency: Air Quality System (AQS)
 
-```{r, setup, include=FALSE}
-knitr::opts_chunk$set(fig.path = "../docs/plots/")
 
-aqs_creds = readr::read_file(file.path("inputs", "aqs_credentials.txt"))
-aqs_creds <- strsplit(aqs_creds, split = ", ")[[1]]
-```
 
 Load required libraries
 
@@ -23,6 +18,14 @@ library(leaflet)       # Interactive maps
 library(htmlwidgets)   # Creating HTML widgets
 library(webshot)       # Convert URL to image
 library(DataOverviewR) # Data dictionary and summary
+library(here)          # Robust file paths
+```
+
+```{r, setup, include=FALSE}
+knitr::opts_chunk$set(fig.path = here("docs", "plots"))
+
+aqs_creds = readr::read_file(here("code", "inputs", "aqs_credentials.txt"))
+aqs_creds <- strsplit(aqs_creds, split = ", ")[[1]]
 ```
 
 Define Bay Area bounding box
@@ -83,9 +86,9 @@ monitors_sf <- monitor_info %>%
 Map of AQS Monitors in Bay Area
 
 ```{r, map-aqs}
-img_path <- file.path("../docs", "plots", "aqs-map.png")
+img_path <- here("docs", "plots", "aqs-map.png")
 if (!file.exists(img_path)) {
-  map_path <- file.path("../docs", "maps", "aqs-map.html")
+  map_path <- here("docs", "maps", "aqs-map.html")
   m <- leaflet() %>%
   addCircleMarkers(data = monitors_sf, popup = ~as.character(si_id), label = ~as.character(si_id),
                    fillColor = "#275C9D", fillOpacity = 0.5, weight = 0, radius = 5) %>%
@@ -98,11 +101,14 @@ knitr::include_graphics(img_path)
 
 **Download AQS Hourly Data in Bay Area**
 
+*need to change code to download 2018/2019*
+
 ```{r, download-aqs-data}
-filepath <- file.path("data", "raw", "EPA_airquality.csv") 
+filepath <- here("code", "data", "raw", "EPA_airquality.csv") 
 if (!file.exists(filepath)) { # (skip if full file exists)
   # Loop through each monitor and download, process, and save data to CSV
   for (i in 1:nrow(monitor_info)) {
+    i=1
     id <- paste0(monitor_info$state_code[i], "_", 
                  monitor_info$county_code[i], "_", 
                  monitor_info$site_number[i])
@@ -140,10 +146,10 @@ if (!file.exists(filepath)) { # (skip if full file exists)
 Combine AQS Files
 
 ```{r, combine-aqs-files}
-filepath <- file.path("data", "raw", "EPA_airquality.csv")
+filepath <- here("code", "data", "raw", "EPA_airquality.csv")
 if (!file.exists(filepath)) {
   # Get the list of AQS files
-  csv_files <- list.files(path = file.path("data", "raw", "AQS"), 
+  csv_files <- list.files(path = file.path("code", "data", "raw", "AQS"), 
                           pattern = "aqs_201[89]_.*\\.csv", 
                           full.names = TRUE)
   
@@ -160,7 +166,7 @@ if (!file.exists(filepath)) {
 ```
 
 ```{r, read-aqs, echo = FALSE}
-aqs_data <- read.csv(file.path("data", "raw", "EPA_airquality.csv"))
+aqs_data <- read.csv(here("code", "data", "raw", "EPA_airquality.csv"))
 ```
 
 ---

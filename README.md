@@ -90,7 +90,6 @@ source("setup.R")
 HIGHWAY DESCRIPTIONS
 https://taginfo.openstreetmap.org/keys/highway#values
 
-
 https://taginfo.geofabrik.de/north-america:us:california:norcal/keys/landuse#overview
 
 OSM LAND USE CATEGORIZATION

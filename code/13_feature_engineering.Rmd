@@ -1,0 +1,115 @@
+---
+title: "Feature Engineering" 
+output: github_document
+knit: (function(input, ...) {rmarkdown::render(input, output_dir = "../docs", )})
+---
+
+```{r, setup, echo=FALSE}
+knitr::opts_chunk$set(fig.path = "../docs/plots/")
+```
+
+Load required libraries
+
+```{r, load-libraries, message = FALSE, warning = FALSE}
+library(dplyr)         # Data manipulation
+library(data.table)    # Working with large files
+library(DataOverviewR) # Data dictionary and summary
+library(lubridate)
+```
+
+```{}
+purpleair_data <- fread(file.path("data", "processed", "purpleair_data.csv"))
+head(purpleair_data)
+```
+
+```{r}
+desc <- data_description(
+  purpleair_data,
+  var_desc = 
+    c("sensor_index" = "Unique sensor ID",
+      "time_stamp" = "UTC timestamp",
+      "rssi" = "WiFi signal strength (dBm)",
+      "uptime" = "Minutes since startup",
+      "memory" = "Free memory (Kb)",
+      "humidity" = "Sensor humidity (%)",
+      "temperature" = "Sensor temperature (F)",
+      "pressure" = "Pressure (mbar)",
+      "analog_input" = "Voltage on analog input",
+      "pm2.5_alt" = "PM2.5 concentration (µg/m³, ALT formula)",
+      "location_type" = "Location: 0=Outdoor, 1=Indoor",
+      "dow" = "Day of week",
+      "hour" = "Hour of day",
+      "day" = "Day of month",
+      "month" = "Month",
+      "year" = "Year",
+      "holiday" = "Holiday indicator (1=Yes)",
+      "pm2.5lag1" = "PM2.5 lag (1 hour)",
+      "pm2.5lag3" = "PM2.5 lag (3 hours)",
+      "pm2.5lag6" = "PM2.5 lag (6 hours)",
+      "pm2.5lag12" = "PM2.5 lag (12 hours)",
+      "pm2.5lag24" = "PM2.5 lag (24 hours)"
+    ))
+
+data_dictionary(purpleair_data, 
+                data_title = "PurpleAir", 
+                descriptions = desc,
+                hide = c("NA_Count", "NA_Percentage", "N_Unique"),
+                top_n = 3)
+```
+
+```{r}
+desc <- data_description(
+  weather_data,
+  var_desc = 
+    c("station" = "Three or four character site identifier",
+      "timestamp" = "Timestamp of the observation (UTC)",
+      "temp_fahrenheit" = "Air Temperature in Fahrenheit, typically @ 2 meters",
+      "rel_humidity" = "Relative Humidity in %",
+      "wind_direction" = "Wind Direction in degrees from *true* north",
+      "wind_speed" = "Wind Speed in knots",
+      "wind_gust" = "Wind Gust in knots",
+      "lon" = "Longitude",
+      "lat" = "Latitude"
+    ))
+
+data_dictionary(weather_data, 
+                data_title = "Weather Stations Bay Area Hourly 2018-2019", 
+                descriptions = desc,
+                hide = c("NA_Count", "NA_Percentage", "N_Unique", "top_n"))
+```
+
+```{r}
+# Load datasets as data.tables
+
+# purple air: sensor_index, time_stamp, rssi, uptime, memory, humidity, temperature, pressure, analog_input, pm2.5_alt, location_type, dow, hour, day, month, year, holiday, location_type_mode, pm2.5lag1, pm2.5lag3, pm2.5lag6, pm2.5lag12, pm2.5lag24
+purpleair_data <- fread(file.path("data", "processed", "purpleair_data.csv"))
+
+# wildfire: sensor_index, pa_date, fire_id, fire_distance, fire_direction, GIS_ACRES, fire_day, after_containment
+wildfires_purpleair_dates <- fread(file.path("data", "processed", "wildfires_purpleair_dates.csv"))
+
+# weather: station, timestamp, temp_fahrenheit, rel_humidity, wind_direction, wind_speed
+weather_data <- fread(file.path("data", "raw", "weather.csv"))[, .(station, timestamp, temp_fahrenheit, rel_humidity, wind_direction, wind_speed)]
+
+# weather stations: sensor_index, station, station_dist
+weather_pa <- fread(
+  file.path("data", "processed", "weatherstations_pa.csv"))
+
+# osm land: sensor_index, industrial, urban, artificial, natural, missing
+land_data <- fread(file.path("data", "processed", "land_data.csv"))
+
+# uber speeds: utc_timestamp, sensor_index, mean_congestion_major, mean_congestion_moderate, mean_congestion_minor, mean_speed_major, mean_speed_moderate, mean_speed_minor, n_measurements_major, n_measurements_moderate, n_measurements_minor
+speeds_data <- fread(file.path("data", "processed", "speeds_data.csv"))
+```
+
+```{r}
+wildfires_purpleair_dates <- wildfires_purpleair_dates %>% 
+  mutate(
+    f_sz = case_when(
+      GIS_ACRES < 100 ~ 1,
+      GIS_ACRES >= 100 & GIS_ACRES <= 1000 ~ 2,
+      GIS_ACRES > 1000 ~ 3)
+  )
+```
+
+
+

@@ -1,0 +1,238 @@
+---
+title: "Data Integration" 
+output: github_document
+knit: (function(input, ...) {rmarkdown::render(input, output_dir = "../docs", )})
+---
+
+```{r, setup, echo=FALSE}
+knitr::opts_chunk$set(fig.path = "../docs/plots/")
+```
+
+Load required libraries
+
+```{r, load-libraries, message = FALSE, warning = FALSE}
+library(lubridate)    # For dates
+library(dplyr)        # Data manipulation
+library(tidyr)        # pivot
+library(ggplot2)      # Data visualization
+library(data.table)   # Working with large files
+library(xgboost)      # XGBoost model
+library(caret)        # Preprocessing
+library(caTools)
+# library(cvms)
+```
+
+```{r, load-dataset}
+dataset <- fread(file.path("data", "processed", "final_dataset.csv"))
+```
+
+```{r}
+# Define the start and end dates
+start_date <- as.POSIXct("2018-12-01 00:00:00")
+end_date <- as.POSIXct("2019-06-01 00:00:00")
+
+# Filter the dataset for period no fires
+dataset <- dataset[time_stamp >= start_date & time_stamp < end_date]
+
+# Drop fire columns
+dataset[, c("fire_day", "fire_distance", "fire_direction", "GIS_ACRES", "after_containment", "fire") := NULL]
+```
+
+```{r}
+# Add engineered features
+dataset[, `:=`(
+  # Time features
+  is_rush_hour = as.numeric(hour %in% c(7,8,9,16,17,18)),
+  is_weekend = as.numeric(dow %in% c(1,7)),
+  season = fcase(
+    month %in% c(12,1,2), 1,
+    month %in% c(3,4,5), 2,
+    month %in% c(6,7,8), 3,
+    month %in% c(9,10,11), 4
+  ),
+  
+  # Weather interactions
+  temp_humid = pa_temp * pa_humidity,
+  wind_speed_direction = wind_speed * cos(wind_direction),
+  
+  # Traffic-time interactions
+  rush_congestion = mean_congestion_major * (hour %in% c(7,8,9,16,17,18))
+)]
+```
+
+```{r}
+# Create two feature sets: with and without early lags
+features_with_lags <- setdiff(names(dataset), 
+                             c("time_stamp", "sensor_index", "pm2.5_alt"))
+
+features_no_early_lags <- setdiff(features_with_lags, 
+                                 c("pm2.5lag1", "pm2.5lag3"))
+```
+
+
+```{r}
+# Sort and split data
+dataset <- dataset[order(time_stamp)]
+split_index <- floor(0.7 * nrow(dataset))
+split_time <- dataset$time_stamp[split_index]
+# Create training and test sets
+train_data <- dataset[time_stamp <= split_time]
+test_data <- dataset[time_stamp > split_time]
+```
+
+```{r}
+# Function to prepare data and train model
+train_xgb_model <- function(train_data, test_data, features, params) {
+  # Prepare matrices
+  dtrain <- xgb.DMatrix(data = as.matrix(train_data[, ..features]), 
+                        label = train_data$pm2.5_alt)
+  dtest <- xgb.DMatrix(data = as.matrix(test_data[, ..features]), 
+                       label = test_data$pm2.5_alt)
+  
+  # Train model with early stopping
+  model <- xgb.train(
+    params = params,
+    data = dtrain,
+    nrounds = 5000,
+    watchlist = list(train = dtrain, test = dtest),
+    early_stopping_rounds = 50,
+    verbose = 1
+  )
+  
+  # Return model and predictions
+  preds <- predict(model, dtest)
+  
+  # Calculate metrics
+  rmse <- sqrt(mean((preds - test_data$pm2.5_alt)^2))
+  mae <- mean(abs(preds - test_data$pm2.5_alt))
+  r2 <- 1 - sum((test_data$pm2.5_alt - preds)^2) / 
+    sum((test_data$pm2.5_alt - mean(test_data$pm2.5_alt))^2)
+  
+  list(
+    model = model,
+    predictions = preds,
+    metrics = list(rmse = rmse, mae = mae, r2 = r2)
+  )
+}
+```
+
+
+```{r}
+# XGBoost parameters
+xgb_params <- list(
+  booster = "gbtree",
+  eta = 0.01,
+  max_depth = 6,
+  gamma = 1,
+  subsample = 0.8,
+  colsample_bytree = 0.8,
+  min_child_weight = 1,
+  objective = "reg:squarederror",
+  eval_metric = "rmse"
+)
+```
+
+```{}
+# Train models with and without early lags
+model_with_lags <- train_xgb_model(train_data, test_data, features_with_lags, xgb_params)
+model_no_early_lags <- train_xgb_model(train_data, test_data, features_no_early_lags, xgb_params)
+```
+
+```{r}
+# Load the model with early lags
+model_with_lags <- readRDS(file.path("data", "models", "xgb_with_lags.rds"))
+
+# Load the model without early lags
+model_no_early_lags <- readRDS(file.path("data", "models", "xgb_no_early_lags.rds"))
+```
+
+```{r}
+# Print results
+cat("\nModel with all lags:\n")
+print(model_with_lags$metrics)
+
+# Model with all lags:
+# $rmse
+# [1] 0.4166484
+# 
+# $mae
+# [1] 0.1053619
+# 
+# $r2
+# [1] 0.6504693
+```
+
+
+```{r}
+cat("\nModel without early lags:\n")
+print(model_no_early_lags$metrics)
+
+# Model without early lags:
+# $rmse
+# [1] 0.6071238
+# 
+# $mae
+# [1] 0.2543769
+# 
+# $r2
+# [1] 0.257835
+```
+
+
+```{r}
+# Feature importance for both models
+importance_with_lags <- xgb.importance(feature_names = features_with_lags, model = model_with_lags$model)
+importance_with_lags
+```
+
+```{r}
+xgb.plot.importance(importance_matrix = importance_with_lags)
+
+```
+
+
+```{r}
+importance_no_early_lags <- xgb.importance(feature_names = features_no_early_lags,model = model_no_early_lags$model)
+importance_no_early_lags
+```
+
+
+```{r}
+xgb.plot.importance(importance_matrix = importance_no_early_lags)
+```
+
+
+```{r}
+# Plot predictions vs actual for both models
+plot_predictions <- function(actual, predicted, title) {
+  data.frame(Actual = actual, Predicted = predicted) %>%
+    ggplot(aes(x = Actual, y = Predicted)) +
+    geom_point(alpha = 0.1) +
+    geom_abline(intercept = 0, slope = 1, color = "red") +
+    labs(title = title) +
+    theme_minimal()
+}
+```
+
+
+```{r}
+# x and y should have same scale
+p1 <- plot_predictions(test_data$pm2.5_alt, model_with_lags$predictions, 
+                      "Predictions with all lags")
+p1
+```
+
+
+```{r}
+p2 <- plot_predictions(test_data$pm2.5_alt, model_no_early_lags$predictions, 
+                      "Predictions without early lags")
+p2
+```
+
+
+```{r}
+# Save models and results
+saveRDS(model_with_lags, file.path("data", "models", "xgb_with_lags.rds"))
+saveRDS(model_no_early_lags, file.path("data", "models", "xgb_no_early_lags.rds"))
+```
+

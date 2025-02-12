@@ -62,9 +62,9 @@ img_path <- file.path("../docs", "plots", "weather-stations-map.png")
 if (!file.exists(img_path)) {
   map_path <- file.path("../docs", "maps", "weather-stations-map.html")
   m <- leaflet() %>%
-  addCircleMarkers(data = stations_within_bbox, popup = ~as.character(id), label = ~as.character(id),
-                   fillColor = "#d90429", fillOpacity = 0.5, weight = 0, radius = 5) %>%
-  addProviderTiles("CartoDB")
+    addCircleMarkers(data = stations_within_bbox, popup = ~as.character(id), label = ~as.character(id),
+                     fillColor = "#d90429", fillOpacity = 0.5, weight = 0, radius = 5) %>%
+    addProviderTiles("CartoDB")
   saveWidget(m, file = map_path)
   webshot(map_path, file = img_path)
 }
@@ -118,8 +118,7 @@ if (!file.exists(filepath)) {
 ```
 
 ```{r, read-weather-csv, echo = FALSE}
-filepath <- file.path("data", "raw", "weather.csv")
-weather_data <- read.csv(filepath)
+weather_data <- read.csv(file.path("data", "raw", "weather.csv"))
 ```
 
 ---
@@ -163,8 +162,7 @@ knitr::kable(head(weather_data, 3), row.names = FALSE, format = "markdown")
 
 ```{r, read-sensors-csv, echo = FALSE}
 # Read sensors data
-filepath <- file.path("data", "raw", "pa_sensors.csv")
-pa_sensors <- read.csv(filepath)
+pa_sensors <- read.csv(file.path("data", "raw", "pa_sensors.csv"))
 pa_sf <- st_as_sf(pa_sensors, coords=c("longitude", "latitude"), crs = 4326) %>% select(sensor_index)
 ```
 
@@ -179,8 +177,11 @@ keep_stations <- weather_data %>%
   filter(data_prop >= 0.95) %>% 
   pull(station)
 
-stations <- weather_data %>% select(station, lon, lat)
+stations <- weather_data %>% filter(station %in% keep_stations) %>% select(station, lon, lat) %>% distinct()
 stations_sf <- st_as_sf(stations, coords=c("lon", "lat"), crs = 4326)
+st_write(stations_sf, 
+         file.path("data", "raw", "stations_sf.gpkg"),
+         driver = "GPKG", append = FALSE, quiet = TRUE)
 ```
 
 Link Nearest Weather Stations to PurpleAir sensors
@@ -200,7 +201,75 @@ if (!file.exists(filepath)) {
   
   weather_pa <- pa_sf %>% st_drop_geometry()
   
-  # Save PurpleAir sensors and weather stations shapefile
-  write.csv(weather_pa, filepath)
+  # Save PurpleAir sensors and weather stations
+  write.csv(weather_pa, filepath, row.names = FALSE)
 }
+weather_pa <- read.csv(filepath)
+pa_sf <- st_as_sf(pa_sensors, coords=c("longitude", "latitude"), crs = 4326) %>% select(sensor_index)
+pa_sf <- left_join(pa_sf, weather_pa, by = "sensor_index")
 ```
+
+Map of PurpleAir sensors and nearest weather stations
+
+```{r, map-sensors-to-stations}
+img_path <- file.path("../docs", "plots", "pa-weather-map.png")
+if (!file.exists(img_path)) {
+  map_path <- file.path("../docs", "maps", "pa-weather-map.html")
+  # Convert weather stations to a data frame
+  weather_stations_df <- as.data.frame(st_coordinates(stations_sf))
+  colnames(weather_stations_df) <- c("wlon", "wlat")
+  weather_stations_df$weatherstation <- stations_sf$station
+  
+  # Convert filtered sensors to a data frame
+  filtered_sensors_df <- as.data.frame(st_coordinates(pa_sf))
+  colnames(filtered_sensors_df) <- c("plon", "plat")
+  filtered_sensors_df$sensor_index <- pa_sf$sensor_index
+  filtered_sensors_df$weatherstation <- pa_sf$station
+  
+  # Join filtered sensors and weather stations data frames
+  result <- left_join(filtered_sensors_df, weather_stations_df, by = "weatherstation")
+  
+  # Connect sensors with closest weather stations with lines
+  sensor_coords <- result[, c("plon", "plat")]
+  names(sensor_coords) <- c("long", "lat")
+  station_coords <- result[, c("wlon", "wlat")]
+  names(station_coords) <- c("long", "lat")
+  
+  # Add lines as geometry
+  result$geometry <- do.call("c", lapply(seq(nrow(sensor_coords)), function(i) {
+    st_sfc(st_linestring(as.matrix(rbind(sensor_coords[i, ], station_coords[i, ]))), crs = 4326)
+  }))
+  
+  # Convert the result to a simple feature object
+  closest_station <- st_as_sf(result)
+  
+  # save closest stations lines
+  st_write(closest_station, 
+           file.path("data", "raw", "closest_station.gpkg"),
+           driver = "GPKG", append = FALSE, quiet = TRUE)
+  
+  # Map of PurpleAir sensors and nearest weather stations
+  m <- leaflet() %>%
+    addPolylines(data = closest_station, color = "lightblue", weight = 0.5, opacity = 1) %>%
+    addCircleMarkers(data = pa_sf, popup = ~paste("Sensor Index:", sensor_index),
+                     fillColor = "#9933CC", fillOpacity = 1, 
+                     color = "#9933CC", weight = 2, opacity = 1, radius = 2) %>%
+    addCircleMarkers(data = stations_sf, popup = ~paste("Weather Station:", station),
+                     fillColor = "#d90429", fillOpacity = 1, 
+                     color = "#d90429", weight = 3, opacity = 1, radius = 3) %>%
+    addProviderTiles("CartoDB") %>%
+    addLayersControl(overlayGroups = c("PurpleAir Sensors and Nearest Weather Stations"),
+                     options = layersControlOptions(collapsed = FALSE)) %>%
+    addLegend(colors = c("#9933CC", "#d90429"),
+              labels = c("PurpleAir Sensors", "Weather Stations"),
+              title = "Legend", position = "bottomleft") %>%
+    setView(lng = -122.44, lat = 37.76, zoom = 10)
+  saveWidget(m, file = map_path)
+  webshot(map_path, file = img_path)
+}
+
+knitr::include_graphics(img_path)
+```
+
+
+

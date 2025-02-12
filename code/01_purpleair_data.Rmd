@@ -17,11 +17,13 @@ library(leaflet)       # Interactive maps
 library(htmlwidgets)   # HTML widgets
 library(webshot)       # Image conversion
 library(DataOverviewR) # Data documentation
+library(data.table)    # Working with large files
+library(here)          # Robust file paths
 ```
 
 ```{r, echo=FALSE}
 # path to save figures
-knitr::opts_chunk$set(fig.path = "../docs/plots/")
+knitr::opts_chunk$set(fig.path = here("docs", "plots"))
 ```
 
 # 1. Data Download
@@ -29,7 +31,7 @@ knitr::opts_chunk$set(fig.path = "../docs/plots/")
 
 ```{r, download-sensor-metadata}
 # API configuration
-api_key = readr::read_file(file.path("inputs", "purpleair_key.txt"))
+api_key = readr::read_file(here("code", "inputs", "purpleair_key.txt"))
 
 # Download sensor metadata
 pa_sensors <- getPurpleairSensors(
@@ -70,7 +72,7 @@ average <- "60" # 60-minute averages
 
 # Download data if not already exists
 filename <- paste0("purpleair_", start_date, "_", end_date, ".csv")
-filepath <- file.path("data", "raw", filename)
+filepath <- here("code", "data", "raw", filename)
 
 if (!file.exists(filepath)) {
   # Filter sensors active during time period
@@ -96,11 +98,11 @@ if (!file.exists(filepath)) {
   write.csv(purpleair_data, file = filepath, row.names = FALSE)
 } else {
   # Read purple air data
-  purpleair_data <- read.csv(filepath)
+  purpleair_data <- fread(filepath)
 }
 
 # Save sensor metadata
-filepath <- file.path("data", "raw", "pa_sensors.csv")
+filepath <- here("code", "data", "raw", "pa_sensors.csv")
 if (!file.exists(filepath)) {
   filtered_sensors <- pa_sensors %>% 
     filter(sensor_index %in% unique(purpleair_data$sensor_index))
@@ -113,7 +115,7 @@ if (!file.exists(filepath)) {
 ```{r, sensor-metadata-dictionary}
 desc <- data_description(pa_sf, 
                          var_desc = c(
-                           "sensor_index" = "Unique identifier for each sensor",
+                           "sensor_index" = "PurpleAir sensor unique identifier",
                            "date_created" = "UTC timestamp of sensor creation",
                            "last_seen" = "UTC timestamp of last data received",
                            "location_type" = "Sensor location (0=Outside, 1=Inside)",
@@ -173,10 +175,10 @@ knitr::kable(head(purpleair_data, 3),
 # 3. Spatial Coverage Visualization
 
 ```{r, spatial-coverage-visualization}
-img_path <- file.path("../docs", "plots", "pa-sensors-map.png")
+img_path <- here("docs", "plots", "pa-sensors-map.png")
 
 if (!file.exists(img_path)) {
-  map_path <- file.path("../docs", "maps", "pa-sensors-map.html")
+  map_path <- here("docs", "maps", "pa-sensors-map.html")
   m <- leaflet() %>%
     addCircleMarkers(data = pa_sf, 
                      popup = ~as.character(sensor_index), 

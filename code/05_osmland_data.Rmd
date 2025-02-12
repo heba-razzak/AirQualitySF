@@ -1,0 +1,878 @@
+---
+title: "OpenStreetMap Data"
+output: github_document
+knit: (function(input, ...) {rmarkdown::render(input, output_dir = "../docs", )})
+---
+
+```{r, setup, include=FALSE}
+knitr::opts_chunk$set(fig.path = "../docs/plots/")
+```
+
+Load required libraries
+
+```{r, load-libraries, message = FALSE, warning = FALSE}
+library(osmdata)       # Download OpenStreetMap Data
+library(dplyr)         # Data manipulation
+library(data.table)    # Working with large files
+library(sf)            # Spatial data manipulation
+library(leaflet)       # Interactive maps
+library(tigris)        # Counties map data
+library(ggplot2)       # Data visualization
+library(htmlwidgets)   # Creating HTML widgets
+library(webshot)       # Convert URL to image
+library(DataOverviewR)
+library(tidyverse)
+library(terra)
+library(tidyterra)
+library(tibble)
+library(here)          # Robust file paths
+```
+
+```{r, read-sensors-csv, echo = FALSE}
+# Read sensors data
+pa_sensors <- read.csv(here("code", "data", "raw", "pa_sensors.csv"))
+pa_sf <- st_as_sf(pa_sensors, coords=c("longitude", "latitude"), crs = 4326)
+```
+
+Create 1 km octagon buffers around Purple Air Sensors
+
+```{r, pa-buffers, eval=TRUE}
+# Reproject to California Albers (meters) for buffering
+pa_sf <- st_transform(pa_sf, 3310)
+
+# Create 1 km buffers (octagons) around sensors
+purpleairs_buffers <- st_buffer(pa_sf, dist=1000, nQuadSegs=2)
+
+# Reproject back to lat/lon for mapping
+pa_sf <- st_transform(pa_sf, 4326)
+purpleairs_buffers <- st_transform(purpleairs_buffers, 4326)
+
+# save buffers
+st_write(purpleairs_buffers, 
+         here("code", "data", "raw", "purpleairs_buffers.gpkg"),
+         driver = "GPKG", append = FALSE, quiet = TRUE)
+```
+
+Map PurpleAir Sensors with Buffers
+
+```{r, buffer-map}
+img_path <- here("docs", "plots", "pa-buffer-map.png")
+if (!file.exists(img_path)) {
+  map_path <- here("docs", "maps", "pa-buffer-map.html")
+  m <- leaflet() %>%
+    addPolygons(data = purpleairs_buffers, 
+                popup = ~paste("sensor_index:", sensor_index), 
+                label = ~paste("sensor_index:", sensor_index),
+                color = "#AA44AA", opacity = 0.5, weight = 1,
+                fillColor = "#dec9e9", fillOpacity = 0.2) %>%
+    addCircleMarkers(data = pa_sf, 
+                     popup = ~paste("sensor_index:", sensor_index), 
+                     label = ~paste("sensor_index:", sensor_index),
+                     color = "#AA44AA", weight = 2, radius = 1) %>%
+    addProviderTiles("CartoDB") %>%
+    setView(lng = -122.4194, lat = 37.7749, zoom = 12)
+  saveWidget(m, file = map_path)
+  webshot(map_path, file = img_path)
+}
+
+knitr::include_graphics(img_path)
+```
+
+Download OSM Landuse, Natural, Leisure, Boundary
+
+```{r, iferror-use-dif-server, include = FALSE, eval = FALSE}
+# If osmdata is failing (Waiting 12s to retry)
+# Try using different overpass server
+# https://wiki.openstreetmap.org/wiki/Overpass_API#Public_Overpass_API_instances
+
+old_url <- "https://overpass.kumi.systems/api/interpreter"
+new_url <- "https://overpass-api.de/api/interpreter"
+get_overpass_url()
+set_overpass_url(new_url)
+```
+
+```{r, osm-land, warning = FALSE}
+filepath <- here("code", "data", "raw", "bayarea_osm_land.gpkg")
+
+process_polygons <- function(osm_data, osm_key, geom) {
+  if (!is.null(osm_data) && nrow(osm_data) > 0) {
+    osm_data <- st_make_valid(st_cast(osm_data, "POLYGON"))
+    osm_data$osm_id <- ifelse("osm_id" %in% names(osm_data), osm_data$osm_id, rownames(osm_data))
+    osm_data$name <- ifelse("name" %in% names(osm_data), osm_data$name, NA)
+    # if osm_key column doesnt exist, add it
+    if (!(osm_key %in% names(osm_data))) {
+      osm_data[[osm_key]] <- NA_character_
+    }
+    if (osm_key == "boundary") {
+      osm_data <- osm_data %>% filter(boundary %in% c("national_park", "protected_area"))
+    }
+    osm_data <- st_make_valid(osm_data)
+    osm_data <- osm_data %>% mutate(osm_value = osm_data[[osm_key]], osm_key = osm_key) %>%
+      select(osm_id, osm_value, osm_key, name) %>%
+      st_intersection(geom)
+    return(osm_data)
+  }
+  return(NULL)
+}
+
+if (!file.exists(filepath)) {
+  osm_keys <- c("landuse", "natural", "leisure", "boundary")
+  all_land_data <- NULL
+  for (i in 1:nrow(purpleairs_buffers)) {
+    sensor_index <- purpleairs_buffers$sensor_index[i]
+    filename <- here("code", "data", "raw", "OSM", paste0("land_sensor", sensor_index, ".gpkg"))
+    if (file.exists(filename)) next
+    land_data <- NULL
+    for (osm_key in osm_keys) {
+      bb <- purpleairs_buffers[i, ]$geom
+      # Download OSM data for each key
+      osm <- opq(bbox = bb) %>%
+        add_osm_feature(key = osm_key) %>%
+        osmdata_sf()
+      # Combine polygons and multipolygons
+      osm_p <- process_polygons(osm$osm_polygons, osm_key, bb)
+      osm_mp <- process_polygons(osm$osm_multipolygons, osm_key, bb)
+      key_data <- rbind(osm_p, osm_mp)
+      land_data <- rbind(land_data, key_data)
+    }
+    if (is.null(land_data) || nrow(land_data) == 0) next 
+    land_data <- land_data %>% 
+      mutate(sensor_index = sensor_index) %>%
+      select(sensor_index, osm_id, osm_value, osm_key, name) 
+    st_write(land_data, filename, driver = "GPKG", append = FALSE, quiet = TRUE)
+  }
+  # Save OSM land data for sensors into a single file
+  file_paths <- list.files(here("code", "data", "raw", "OSM"),
+                           pattern = "^land_sensor.*\\.gpkg$", full.names = TRUE)
+  sf_list <- lapply(file_paths, st_read, quiet = TRUE)
+  merged_sf <- do.call(rbind, sf_list) %>% distinct()
+  st_write(merged_sf, filepath, driver = "GPKG", append = FALSE, quiet = TRUE)
+}
+```
+
+```{r, land-dict}
+osm_land <- st_read(here("code", "data", "raw", "bayarea_osm_land.gpkg"), quiet = TRUE, promote_to_multi = FALSE)
+
+desc <- data_description(osm_land, 
+                         var_desc = c(
+                           "sensor_index" = "Unique identifier for PurpleAir sensors",
+                           "osm_id" = "Unique OpenStreetMap identifier for land use feature",
+                           "osm_value" = "Specific land use value/category (park, forest, industrial etc.)",
+                           "osm_key" = "Top-level OSM classification (landuse, natural, leisure etc.)", 
+                           "name" = "Name of the land use feature if available",
+                           "geom" = "Land use polygon geometry"
+                         ))
+
+data_dictionary(osm_land, 
+                data_title = "OSM Land", 
+                descriptions = desc, 
+                hide = c("top_n", "NA_Percentage", "NA_Count", "n_unique"))
+
+# Show example records
+knitr::kable(head(osm_land, 3),
+             row.names = FALSE,
+             format = "markdown",
+             caption = "Example Records")
+```
+
+```{r, land-nas}
+data_dictionary(osm_land, 
+                data_title = "Missing Values Summary")
+```
+
+```{r, define-land-types}
+osm_lands <- osm_land %>%
+  filter(!is.na(osm_value)) %>%
+  mutate(landtype = case_when(
+    # Industrial
+    osm_value %in% c("industrial", "construction", "railway", "landfill",
+                     "harbour", "port", "lock", "marina", "brownfield",
+                     "quarry", "military", "special_use") ~ "industrial",
+    # Urban
+    osm_value %in% c("commercial", "retail", "garages", "common", "civic",
+                     "swimming_pool", "fitness_centre", "bowling_alley",
+                     "miniature_golf", "education", "religious", "institutional") ~ "urban",
+    # Residential
+    osm_value %in% c("residential", "outdoor_seating") ~ "residential",
+    # Natural Green
+    osm_value %in% c("forest", "wood", "scrub", "heath", "grassland", "meadow",
+                     "greenfield", "nature_reserve", "national_park", "conservation",
+                     "protected_area", "cliff", "shrub", "shrubbery") ~ "natural_green",
+    # Artificial Green
+    osm_value %in% c("park", "recreation_ground", "pitch", "garden",
+                     "sports_centre", "sports_hall", "stadium", "playground",
+                     "golf_course", "village_green", "allotments", "cemetery",
+                     "zoo", "track", "raceway", "plant_nursery", "horse_riding",
+                     "fishing") ~ "artificial_green",
+    # Water
+    osm_value %in% c("water", "riverbank", "reservoir", "basin", "dock", "canal",
+                     "pond", "salt_pond", "tidal", "marsh", "wetland", "reef",
+                     "bay", "coastline") ~ "water",
+    # Sparse
+    osm_value %in% c("sand", "scree", "beach", "mud", "glacier", "rock",
+                     "bare_rock", "farmland", "farm", "farmyard", "peninsula",
+                     "vineyard") ~ "sparse",
+    # Default
+    TRUE ~ "other"
+  ))
+```
+
+```{r, landtype-counts, echo=FALSE, eval=FALSE}
+osmvcount <- osm_lands %>% st_drop_geometry() %>% 
+  count(landtype, osm_key, osm_value) %>% 
+  mutate(pct = paste0(round(100*(n/nrow(osm_lands)),0),"%")) %>% 
+  arrange(desc(n)) %>% 
+  rename(count = n)
+osmvcount
+write.csv(osmvcount, here("code", "data", "osmvcount.csv"), row.names = FALSE)
+```
+
+
+```{r, landtype-counts, echo=FALSE, eval=FALSE}
+osmlcount <- osm_lands %>% 
+  st_drop_geometry() %>% 
+  count(landtype) %>% 
+  mutate(pct = paste0(round(100*(n/nrow(osm_lands)),0),"%")) %>% 
+  arrange(desc(n)) %>%
+  rename(count = n)
+write.csv(osmlcount, here("code", "data", "osmlcount.csv"), row.names = FALSE)
+```
+
+```{r, land-prio}
+priority_order <- c("industrial", "urban", "residential", "artificial_green", 
+                    "natural_green", "water", "sparse")
+```
+
+Resolve overlapping geometries
+
+```{r, test-sensors, include=FALSE}
+# # getting sensors to test on
+# osm_lands %>% st_drop_geometry() %>% select(sensor_index, landtype) %>% distinct()
+# list(osm_lands %>% st_drop_geometry() %>% pull(sensor_index) %>% unique())
+```
+
+```{r, land-colors}
+# Define a color palette for landtype
+landuse_colors <- colorFactor(
+  palette = c("#90EE90", "#FF0000", "#228B22", "#800080", 
+              "#D3D3D3", "#D2B48C", "#FFA500", "#0000FF"),
+  domain = c("artificial_green", "industrial", "natural_green", "other", 
+             "residential", "sparse", "urban", "water"))
+```
+
+```{r, land-type-map}
+osm_landuse1 <- osm_lands %>% filter(sensor_index %in% c(38683, 37693, 19471, 37311, 29865, 19299))
+# osm_landuse1 <- osm_lands %>% filter(sensor_index %in% c(34637, 39227, 10092, 37347, 19571, 36109))
+
+# Map of original land
+leaflet(osm_landuse1) %>%
+  addProviderTiles("CartoDB") %>% 
+  addPolygons(
+    fillColor = ~landuse_colors(landtype), fillOpacity = 0.3, opacity = 0,
+    popup = ~paste("Landuse:", landtype, ", sensor: ", sensor_index),
+    label = ~paste("Landuse:", landtype, ", sensor: ", sensor_index)) %>%
+  addLegend(pal = landuse_colors, values = osm_landuse1$landtype)
+```
+
+```{r, dissolve-land}
+land_dissolved <- osm_lands %>%
+  st_make_valid() %>%
+  group_by(sensor_index, landtype) %>%
+  summarize(geometry = st_union(geom), .groups = 'drop')
+```
+
+```{r, dissolve-land-map}
+land_dissolved1 <- land_dissolved %>% filter(sensor_index %in% c(34637, 39227, 10092, 37347, 19571, 36109))
+# land_dissolved1 <- land_dissolved %>% filter(sensor_index %in% c(38683, 37693, 19471, 37311, 29865, 19299))
+
+# Map with same type dissolved
+leaflet(land_dissolved) %>%
+  addProviderTiles("CartoDB") %>%
+  addPolygons(
+    fillColor = ~landuse_colors(landtype), fillOpacity = 0.5, opacity = 0,
+    popup = ~paste("Landuse:", landtype)) %>%
+  addLegend(pal = landuse_colors, values = land_dissolved1$landtype)
+```
+
+```{r, pivot-land-new, include = FALSE}
+# pivot land type wider 
+land_pivot <- land_dissolved %>%
+  pivot_wider(names_from = landtype, values_from = landtype, values_fill = NA_character_)
+```
+
+```{r, pivot-land-new, include = FALSE}
+cols <- c(industrial = NA_character_, urban = NA_character_,
+          artificial_green = NA_character_, natural_green = NA_character_,
+          other = NA_character_, residential = NA_character_,
+          sparse = NA_character_, water = NA_character_)
+land_pivot <- add_column(land_pivot, !!!cols[setdiff(names(cols), names(land_pivot))])
+```
+
+```{r}
+# Function to convert and clean to only polygons
+clean_to_polygons <- function(data, type_col) {
+  if(nrow(data %>% filter(!!sym(type_col) == type_col)) > 0) {
+    v <- vect(data %>%
+                filter(!!sym(type_col) == type_col) %>%
+                select(sensor_index, !!sym(type_col)))
+    # Keep polygons and multipolygons
+    v <- v[geomtype(v) %in% c("polygons", "multipolygons")]
+    return(v)
+  }
+  return(NULL)
+}
+
+# Convert keeping only polygons
+v_industrial <- clean_to_polygons(land_pivot, "industrial")
+v_urban <- clean_to_polygons(land_pivot, "urban")
+v_residential <- clean_to_polygons(land_pivot, "residential") 
+v_artificial_green <- clean_to_polygons(land_pivot, "artificial_green")
+v_natural_green <- clean_to_polygons(land_pivot, "natural_green")
+v_water <- clean_to_polygons(land_pivot, "water")
+v_sparse <- clean_to_polygons(land_pivot, "sparse")
+v_other <- clean_to_polygons(land_pivot, "other")
+# v_missing <- clean_to_polygons(land_pivot, "missing")
+```
+
+```{r}
+process_sensor <- function(id) {
+  tryCatch({
+    # Initialize list of vector subsets for this sensor
+    geom_list <- list(
+      industrial = if(!is.null(v_industrial)) v_industrial[v_industrial$sensor_index == id],
+      urban = if(!is.null(v_urban)) v_urban[v_urban$sensor_index == id],
+      residential = if(!is.null(v_residential)) v_residential[v_residential$sensor_index == id],
+      artificial_green = if(!is.null(v_artificial_green)) v_artificial_green[v_artificial_green$sensor_index == id],
+      natural_green = if(!is.null(v_natural_green)) v_natural_green[v_natural_green$sensor_index == id],
+      water = if(!is.null(v_water)) v_water[v_water$sensor_index == id],
+      sparse = if(!is.null(v_sparse)) v_sparse[v_sparse$sensor_index == id],
+      other = if(!is.null(v_other)) v_other[v_other$sensor_index == id],
+      # missing = if(!is.null(v_missing)) v_missing[v_missing$sensor_index == id]
+    )
+    
+    # Create empty result
+    result <- NULL
+    
+    # Process in priority order
+    for(land_type in priority_order) {
+      curr_geom <- geom_list[[land_type]]
+      
+      if(!is.null(curr_geom) && nrow(curr_geom) > 0) {
+        # For first geometry
+        if(is.null(result)) {
+          result <- curr_geom
+          result$landtype <- land_type
+        } else {
+          # Erase existing areas from new geometry before adding
+          new_geom <- terra::erase(curr_geom, result)
+          if(!is.null(new_geom) && nrow(new_geom) > 0) {
+            new_geom$landtype <- land_type
+            result <- rbind(result, new_geom)
+          }
+        }
+      }
+    }
+    
+    # Add sensor_index if not present
+    if(!is.null(result)) {
+      result$sensor_index <- id
+    }
+    
+    return(result)
+    
+  }, error = function(e) {
+    message(sprintf("Error processing sensor %s: %s", id, e$message))
+    return(NULL)
+  })
+}
+```
+
+```{r}
+# Process all sensors
+sensor_ids <- unique(land_pivot$sensor_index)
+results <- lapply(sensor_ids, process_sensor)
+```
+
+```{r}
+# Combine results and clean up
+landuse_resolved <- do.call(rbind, results[!sapply(results, is.null)])
+
+# Clean up and standardize output
+landuse_resolved <- landuse_resolved %>%
+  select(sensor_index, landtype) %>%
+  st_as_sf()
+```
+
+```{r}
+# landuse_resolved1 <- landuse_resolved %>% filter(sensor_index %in% c(34637, 39227, 10092, 37347, 19571, 36109))
+landuse_resolved1 <- landuse_resolved
+
+# Map with same type dissolved
+leaflet(landuse_resolved1) %>%
+  addProviderTiles("CartoDB") %>%
+  addPolygons(
+    fillColor = ~landuse_colors(landtype), fillOpacity = 0.7, opacity = 0,
+    popup = ~paste("Landuse:", landtype, " Sensor: ", sensor_index)) %>%
+  addLegend(pal = landuse_colors, values = landuse_resolved1$landtype)
+```
+
+
+```{r}
+leaflet(landuse_resolved1 %>% filter(sensor_index==38683)) %>%
+  addProviderTiles("CartoDB") %>%
+  addPolygons(
+    fillColor = ~landuse_colors(landtype), fillOpacity = 0.7, opacity = 0,
+    popup = ~paste("Landuse:", landtype, " Sensor: ", sensor_index)) %>%
+  addLegend(pal = landuse_colors, values = landuse_resolved1$landtype)
+```
+
+
+```{r}
+leaflet(landuse_resolved1 %>% filter(sensor_index==37693)) %>%
+  addProviderTiles("CartoDB") %>%
+  addPolygons(
+    fillColor = ~landuse_colors(landtype), fillOpacity = 0.7, opacity = 0,
+    popup = ~paste("Landuse:", landtype, " Sensor: ", sensor_index)) %>%
+  addLegend(pal = landuse_colors, values = landuse_resolved1$landtype)
+```
+
+```{r}
+# Map with land resolved
+m <- leaflet(landuse_resolved) %>%
+  addProviderTiles("CartoDB") %>%
+  addPolygons(
+    fillColor = ~landuse_colors(landtype), fillOpacity = 0.7, opacity = 0,
+    popup = ~paste("Landuse:", landtype)) %>%
+  addLegend(pal = landuse_colors, values = landuse_resolved$landtype)
+
+saveWidget(m, file = here("docs", "maps", "osm_resolved.html"), selfcontained = TRUE)
+```
+
+```{r}
+m
+```
+
+## ISSUE WITH OVERLAPPING SENSORS HAVING DIFFERENT LAND TYPES ##
+
+########
+```{}
+land_dissolved %>% st_drop_geometry() %>% select(sensor_index, landtype) %>% 
+distinct() %>% count(sensor_index) %>% arrange(desc(n))
+```
+
+```{r, calc-land-areas}
+# Calculate the theoretical area of your 1km octagon buffer
+buffer_area <- purpleairs_buffers %>%
+  filter(sensor_index == sensor_ids[1]) %>%  # take first sensor's buffer
+  st_area() %>%
+  as.numeric()
+
+sf_use_s2(FALSE)  # Temporarily disable s2
+
+# Clean and validate geometries before area calculation
+landuse_areas <- landuse_resolved %>%
+  st_make_valid() %>%  # Fix invalid geometries
+  st_buffer(0) %>%     # Clean up any remaining issues
+  st_make_valid() %>%  # Make sure everything is valid after buffering
+  mutate(
+    area = as.numeric(units::set_units(st_area(geometry), "m^2"))
+  )
+sf_use_s2(TRUE)   # Re-enable s2
+
+# Area calculations per land type
+land_data <- landuse_areas %>%
+  st_drop_geometry() %>%
+  group_by(sensor_index) %>%
+  summarize(
+    industrial = round(sum(area[landtype == "industrial"], na.rm = TRUE)),
+    urban = round(sum(area[landtype == "urban"], na.rm = TRUE)),
+    residential = round(sum(area[landtype == "residential"], na.rm = TRUE)),
+    artificial_green = round(sum(area[landtype == "artificial_green"], na.rm = TRUE)),
+    natural_green = round(sum(area[landtype == "natural_green"], na.rm = TRUE)),
+    water = round(sum(area[landtype == "water"], na.rm = TRUE)),
+    sparse = round(sum(area[landtype == "sparse"], na.rm = TRUE)),
+    other = round(sum(area[landtype == "other"], na.rm = TRUE)),
+    # missing = round(sum(area[landtype == "missing"], na.rm = TRUE))
+  )
+
+# Optional: Calculate percentage of total area for each land type
+land_data_pct <- land_data %>%
+  rowwise() %>%
+  mutate(
+    total_area = buffer_area,
+    across(-c(sensor_index, total_area), 
+           ~round(. / total_area, 2))) %>%
+  select(-total_area)
+
+write.csv(land_data_pct, file = here("code", "data", "processed", "land_data.csv"), row.names = FALSE)
+```
+
+
+```{}
+# # Temporarily disable S2 geography
+# sf_use_s2(FALSE)
+# 
+# clean_result <- landuse_resolved %>%
+#   st_make_valid() %>%
+#   st_buffer(0) %>%
+#   st_make_valid() %>%
+#   st_cast("MULTIPOLYGON")
+
+# Calculate areas
+landuse_areas <- clean_result %>%
+mutate(
+area = as.numeric(st_area(geometry))
+)
+# 
+# # Re-enable S2 if needed for other operations
+# sf_use_s2(TRUE)
+
+# area calc
+land_data <- landuse_areas %>%
+st_drop_geometry() %>%
+group_by(sensor_index) %>%
+summarize(
+industrial = round(sum(area[landtype == "industrial"], na.rm = TRUE)),
+urban = round(sum(area[landtype == "urban"], na.rm = TRUE)),
+artificial = round(sum(area[landtype == "artificial"], na.rm = TRUE)),
+natural = round(sum(area[landtype == "natural"], na.rm = TRUE)),
+missing = round(sum(area[landtype == "missing"], na.rm = TRUE))
+)
+```
+
+```{r, save-land-data}
+# write.csv(land_data, file = here("code", "data", "processed", "land_data.csv"), row.names = FALSE)
+```
+
+
+
+
+
+
+
+Frequency of osm keys and values near sensors
+
+```{r}
+key_value_counts <- osm_land %>%
+  st_drop_geometry() %>%
+  distinct() %>%
+  group_by(osm_key, osm_value) %>%
+  summarize(n_osmids = n_distinct(osm_id),
+            n_sensors = n_distinct(sensor_index),
+            .groups = 'drop') %>% 
+  arrange(osm_key, desc(n_sensors))
+key_value_counts
+```
+
+```{r}
+key_counts <- osm_land %>%
+  st_drop_geometry() %>%
+  distinct() %>%
+  group_by(osm_key) %>%
+  summarize(n_osmids = n_distinct(osm_id),
+            n_sensors = n_distinct(sensor_index),
+            .groups = 'drop') %>% 
+  arrange(osm_key, desc(n_sensors))
+key_counts
+```
+
+Check where NA values
+
+```{r}
+library(mapview)
+osm_land %>% filter(is.na(osm_value))
+
+
+na_check <- osm_land %>% filter(osm_id == 548274970, sensor_index == 10092)
+mapview(na_check, col.regions = "#8ac926", alpha.regions = 0.5)
+```
+
+Might need later
+
+```{r, eval = FALSE, echo = FALSE}
+(is.na(access) | access != "private")
+(key == "leisure", land == "swimming_pool")
+
+pools <- osm_land %>% filter(osm_key == "leisure", osm_value == "swimming_pool")
+```
+
+
+Map of polygon outlines and polygons filled
+With labels (hover) and popups (click) 
+
+```{r, eval = FALSE, echo = FALSE}
+colors = c("#1982c4", "#8ac926", "#ff595e")
+
+m <- leaflet() %>%
+  addPolygons(data = purpleairs_buffers[i, ],
+              popup = ~paste("sensor_index:", sensor_index),
+              label = ~paste("sensor_index:", sensor_index),
+              color = "black", opacity = 1, weight = 1,
+              fillOpacity = 0) %>%
+  addPolygons(data = osm_data,
+              # popup = ~paste(name, "osm_id:", osm_id),
+              # label = ~paste(name, "osm_id:", osm_id),
+              color = "#8ac926", opacity = 0.5, weight = 2, 
+              fillColor = "#8ac926", fillOpacity = 0) %>%
+  addProviderTiles("CartoDB")
+m
+```
+
+Mapview
+
+```{r}
+mapview(onlynatural, col.regions = "#8ac926", alpha.regions = 0.5) + mapview(onlyboundary, col.regions = "#1982c4", alpha.regions = 0.5)
+```
+
+Save map
+
+```{r, eval = FALSE, echo = FALSE}
+img_path <- here("docs", "plots", "landuse-map.png")
+if (!file.exists(img_path)) {
+  map_path <- here("docs", "maps", "landuse-map.html")
+  m <- leaflet() 
+  # save map as html
+  saveWidget(m, file = map_path)
+  # save html as image
+  webshot(map_path, file = img_path)
+}
+knitr::include_graphics(img_path)
+```
+
+Select columns with at least 90% data 
+
+```{r, eval = FALSE, echo = FALSE}
+x <- x %>% select(where(~ sum(is.na(.)) / nrow(x) < 0.9))
+```
+
+
+
+
+
+
+Map of OpenStreetMap Buildings
+
+```{r, eval = FALSE, echo = FALSE}
+color <- "#D7D0CA"
+
+bayarea_buildings <- st_read(here("code", "data", "raw", "bayarea_buildings_osm.gpkg"), quiet = TRUE)
+ca <- counties("California", cb = TRUE, progress_bar=FALSE)
+
+ggplot() + 
+  geom_sf(data = ca, color="black", fill="antiquewhite", size=0.25) +
+  geom_sf(data = bayarea_buildings, color="darkorange3", fill = "darkorange") +
+  coord_sf(xlim = c(-123.8, -121.0), ylim = c(36.9, 39.0)) +
+  theme(panel.background = element_rect(fill = "aliceblue")) + 
+  xlab("Longitude") + ylab("Latitude") +
+  ggtitle("OSM Buildings")
+```
+
+```{r, eval = FALSE, echo = FALSE}
+## Select small area of San Francisco to map
+
+bbox <- c(xmin = -122.46, ymin = 37.76, xmax = -122.42, ymax = 37.72)
+bbox_polygon <- st_as_sfc(st_bbox(bbox))
+st_crs(bbox_polygon) <- 4326
+sanfran_roads <- st_intersection(bayarea_roads, bbox_polygon)
+sanfran_buildings <- st_intersection(bayarea_buildings, bbox_polygon)
+sanfran_trees <- st_intersection(bayarea_trees, bbox_polygon)
+sanfran_sensors <- st_intersection(filtered_sensors, bbox_polygon)
+sanfran_buffers <- st_intersection(purpleairs_buffers, bbox_polygon)
+
+
+## Plot san fran city
+leaflet() %>%
+  # addPolylines(data = bbox_polygon, color = "black", weight = 3, opacity = 1, popup = "Bounding Box") %>%
+  addPolylines(data = sanfran_roads, color = "cornflowerblue", weight = 1, popup = "Roads") %>%
+  addPolygons(data = sanfran_buildings, fillOpacity = 1, weight = 1, color="darkorange", fillColor = "orange", popup = "Buildings") %>%
+  addCircleMarkers(data = sanfran_trees, popup = "Trees",
+                   fillColor = "#99CC99", fillOpacity = 1,
+                   color = "#336600", weight=1, opacity = 1, radius = 1.5) %>%
+  addCircleMarkers(data = sanfran_sensors, popup = "Sensors",
+                   fillColor = "#CC66CC", fillOpacity = 1,
+                   color = "#9933CC",weight=2, opacity = 1, radius = 5) %>%
+  addPolygons(data = sanfran_buffers, color = "#9933CC", weight = 1, opacity = 1, fillOpacity = 0, popup = "Buffers") %>%
+  addProviderTiles("CartoDB") %>% 
+  addLegend(colors = c("#9933CC", "cornflowerblue", "darkorange", "#336600"), 
+            labels = c("PurpleAir Sensors", "Roads", "Buildings", "Trees"))
+
+
+## Plot san fran city
+
+
+library(htmlwidgets)
+library(htmltools)
+
+
+major_roads <- c("motorway", "motorway_link", "trunk", "primary")
+
+# group road types to major and minor
+osm_roads_pa <- bayarea_roads %>%
+  mutate(highway = ifelse(is.na(highway), "NA", highway)) %>%
+  mutate(road_type = ifelse(highway %in% major_roads, "Major", "Minor"),
+         road_length = round(st_length(geom),2)) 
+
+# Define building categories
+house <- c("house", "detached", "semidetached_house", "houses", "farm")
+apartments <- c("residential", "apartments")
+undefined <- c("NA", "yes")
+
+# Categorize buildings
+buildings <- bayarea_buildings %>% 
+  mutate(building = ifelse(is.na(building), "NA", building)) %>%
+  mutate(building_type = case_when(
+    building %in% undefined ~ "Undefined",
+    building %in% house ~ "House",
+    building %in% apartments ~ "Apartments",
+    TRUE ~ "Other"
+  ),
+  building_area = round(st_area(geom),2))
+
+# Remove units from road_length
+# attributes(road_lengths$road_length) = NULL
+
+# Define colors for road types
+road_colors <- colorFactor(c("cornflowerblue", "lightblue"), domain = c("Major", "Minor"))
+building_colors <- colorFactor(c("orangered", "darkorange", "peachpuff", "papayawhip"), 
+                               domain = c("Other", "Apartments", "House", "Undefined"))
+
+m <- leaflet() %>%
+  addPolylines(data = osm_roads_pa, color = ~road_colors(road_type), weight = 2,
+               label = ~HTML(paste(htmlEscape(road_type), " (", htmlEscape(highway),
+                                   ")<br>Length: ", htmlEscape(road_length), " [m]")),
+               popup = "Roads") %>%
+  addPolygons(data = buildings, fillOpacity = 1, weight = 1,
+              color=~building_colors(building_type), fillColor = ~building_colors(building_type),
+              label = ~HTML(paste(htmlEscape(building_type), " (", htmlEscape(building),
+                                  ")<br>Area: ", htmlEscape(building_area), " [m^2]"),
+                            popup = "Buildings")) %>%
+  addCircleMarkers(data = bayarea_trees, popup = "Trees", label = "Tree",
+                   fillColor = "#99CC99", fillOpacity = 1,
+                   color = "#336600", weight=1, opacity = 1, radius = 2) %>%
+  addCircleMarkers(data = z, popup = "Sensors",
+                   label = ~paste("Sensor:", htmlEscape(sensor_index)),
+                   fillColor = "#CC66CC", fillOpacity = 1, color = "#9933CC",
+                   weight=2, opacity = 1, radius = 5) %>%
+  addPolylines(data = purpleairs_buffers, color = "#9933CC", weight = 1,
+               opacity = 1, popup = "Buffers") %>%
+  addProviderTiles("CartoDB") %>% 
+  addLegend(colors = c("#9933CC", "#336600", "cornflowerblue", "lightblue",
+                       "orangered", "darkorange", "peachpuff", "oldlace"), 
+            labels = c("PurpleAir Sensors", "Trees", "Major Roads", "Minor Roads",
+                       "Other", "Apartments", "House", "Undefined"))
+m
+saveWidget(m, file="san_fran_map.html")
+```
+
+
+########### DEBUG ########### 
+########### DEBUG ########### 
+########### DEBUG ########### 
+
+```{r}
+# 38683, 37693
+osm_land %>% filter(sensor_index==37693, osm_value=="industrial")
+```
+
+```{r}
+osm_land %>% filter(sensor_index==38683, osm_value=="industrial")
+```
+
+```{r}
+land_data <- NULL
+osm_keys <- c("landuse", "natural", "leisure", "boundary")
+sensor_index <- 38683
+buffer <- purpleairs_buffers %>% filter(sensor_index==38683)
+filename <- here("code", "data", "raw", "OSM", paste0("land_sensor", sensor_index, ".gpkg"))
+osm_key = "landuse"
+bb <- buffer$geom
+# Download OSM data for each key
+osm <- opq(bbox = bb) %>%
+  add_osm_feature(key = osm_key) %>%
+  osmdata_sf()
+# Combine polygons and multipolygons
+osm_p <- process_polygons(osm$osm_polygons, osm_key, bb)
+osm_mp <- process_polygons(osm$osm_multipolygons, osm_key, bb)
+key_data <- rbind(osm_p, osm_mp)
+land_data <- rbind(land_data, key_data)
+
+if (is.null(land_data) || nrow(land_data) == 0) next 
+land_data <- land_data %>% 
+  mutate(sensor_index = sensor_index) %>%
+  select(sensor_index, osm_id, osm_value, osm_key, name) 
+```
+```{r}
+osm$osm_multipolygons
+```
+
+```{r}
+geom<-bb
+osm_data<-osm$osm_multipolygons
+osm_data <- st_make_valid(st_cast(osm_data, "POLYGON"))
+osm_data$osm_id <- ifelse("osm_id" %in% names(osm_data), osm_data$osm_id, rownames(osm_data))
+osm_data$name <- ifelse("name" %in% names(osm_data), osm_data$name, NA)
+osm_key = "landuse"
+# osm_key = "testcol"
+# osm_data[[osm_key]] <- ifelse(osm_key %in% names(osm_data), osm_data[[osm_key]], NA)
+if (!(osm_key %in% names(osm_data))) {
+  osm_data[[osm_key]] <- NA_character_  # Ensures new column is character type
+}
+
+if (osm_key == "boundary") {
+  osm_data <- osm_data %>% filter(boundary %in% c("national_park", "protected_area"))
+}
+osm_data <- st_make_valid(osm_data)
+osm_data <- osm_data %>% mutate(osm_value = osm_data[[osm_key]], osm_key = osm_key) %>%
+  select(osm_id, osm_value, osm_key, name)
+
+osm_data <- osm_data %>% st_intersection(geom)
+```
+
+```{r}
+osm_land <- osm_land %>% filter(sensor_index %in% c(38683, 37693))
+
+# Create random colors for unique `osm_value`
+osm_land <- osm_land %>% mutate(random_color = sample(colors(), n(), replace = TRUE))
+osm_land <- osm_land %>% mutate(random_color = ifelse(osm_value=="industrial","red","black"))
+```
+
+```{r}
+# osm_data <- osm_data %>% mutate(random_color = ifelse(landuse=="construction","red","black"))
+
+leaflet(osm_land) %>%
+  addProviderTiles("CartoDB") %>% 
+  addPolygons(
+    fillColor = ~random_color, fillOpacity = 0.5, opacity = 0,
+    popup = ~paste("osm_id: ", osm_id, "osm_value:", osm_value, ", sensor: ", sensor_index, name),
+    label = ~paste("osm_id: ", osm_id, "osm_value:", osm_value, ", sensor: ", sensor_index, name))
+
+```
+
+```{r}
+sensor38683 <- st_read(here("code", "data", "raw", "OSM", "land_sensor38683.gpkg"), quiet = TRUE)
+sensor37693 <- st_read(here("code", "data", "raw", "OSM", "land_sensor37693.gpkg"), quiet = TRUE, promote_to_multi = FALSE)
+unique(sensor38683$osm_value)
+unique(sensor37693$osm_value)
+
+osm_land %>% filter(sensor_index==38683)
+sensor38683
+```
+
+```{r}
+leaflet(osm_land %>% filter(sensor_index==38683)) %>%
+  addProviderTiles("CartoDB") %>% 
+  addPolygons(
+    fillColor = ~random_color, fillOpacity = 0.5, opacity =0,
+    popup = ~paste("osm_id: ", osm_id, "osm_value:", osm_value, ", sensor: ", sensor_index, name),
+    label = ~paste("osm_id: ", osm_id, "osm_value:", osm_value, ", sensor: ", sensor_index, name))
+```
+
+```{r}
+leaflet(osm_land %>% filter(sensor_index==37693)) %>%
+  addProviderTiles("CartoDB") %>% 
+  addPolygons(
+    fillColor = ~random_color, fillOpacity = 0.5, opacity =0,
+    popup = ~paste("osm_id: ", osm_id, "osm_value:", osm_value, ", sensor: ", sensor_index, name),
+    label = ~paste("osm_id: ", osm_id, "osm_value:", osm_value, ", sensor: ", sensor_index, name))
+```
+

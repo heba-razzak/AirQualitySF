@@ -13,6 +13,7 @@ library(leaflet)       # Interactive maps
 library(htmlwidgets)   # Creating HTML widgets
 library(webshot)       # Convert URL to image
 library(DataOverviewR) # Data dictionary and summary
+library(here)          # Robust file paths
 ```
 
 Define Bay Area bounding box
@@ -58,9 +59,9 @@ monitors_sf <- monitor_info %>%
 Map of AQS Monitors in Bay Area
 
 ``` r
-img_path <- file.path("../docs", "plots", "aqs-map.png")
+img_path <- here("docs", "plots", "aqs-map.png")
 if (!file.exists(img_path)) {
-  map_path <- file.path("../docs", "maps", "aqs-map.html")
+  map_path <- here("docs", "maps", "aqs-map.html")
   m <- leaflet() %>%
   addCircleMarkers(data = monitors_sf, popup = ~as.character(si_id), label = ~as.character(si_id),
                    fillColor = "#275C9D", fillOpacity = 0.5, weight = 0, radius = 5) %>%
@@ -75,11 +76,14 @@ knitr::include_graphics(img_path)
 
 **Download AQS Hourly Data in Bay Area**
 
+*need to change code to download 2018/2019*
+
 ``` r
-filepath <- file.path("data", "raw", "EPA_airquality.csv") 
+filepath <- here("code", "data", "raw", "EPA_airquality.csv") 
 if (!file.exists(filepath)) { # (skip if full file exists)
   # Loop through each monitor and download, process, and save data to CSV
   for (i in 1:nrow(monitor_info)) {
+    i=1
     id <- paste0(monitor_info$state_code[i], "_", 
                  monitor_info$county_code[i], "_", 
                  monitor_info$site_number[i])
@@ -117,10 +121,10 @@ if (!file.exists(filepath)) { # (skip if full file exists)
 Combine AQS Files
 
 ``` r
-filepath <- file.path("data", "raw", "EPA_airquality.csv")
+filepath <- here("code", "data", "raw", "EPA_airquality.csv")
 if (!file.exists(filepath)) {
   # Get the list of AQS files
-  csv_files <- list.files(path = file.path("data", "raw", "AQS"), 
+  csv_files <- list.files(path = file.path("code", "data", "raw", "AQS"), 
                           pattern = "aqs_201[89]_.*\\.csv", 
                           full.names = TRUE)
   

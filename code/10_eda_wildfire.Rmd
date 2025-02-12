@@ -36,9 +36,8 @@ fire_sf <- st_read(file.path("data", "processed", "wildfires.shp"), quiet = TRUE
 ```
 
 ```{r, filter-fire-dates, echo = FALSE}
-# Buffer purple air duration by 1 month
-min_date <- as.Date("2017-12-01")
-max_date <- as.Date("2020-01-31")
+min_date <- as.Date("2018-01-01")
+max_date <- as.Date("2019-12-31")
 
 # Missing dates show up as "1899-12-30" - mutate to NA
 # Filter fires to 1 month around purple air dates
@@ -93,6 +92,10 @@ m <- leaflet() %>%
   addProviderTiles("CartoDB")
 
 m
+```
+
+
+```{r, map-fire, echo = FALSE}
 wildfires_df %>% filter(INC_NUM == "00001355")
 ```
 
@@ -136,23 +139,12 @@ for (col in numeric_cols) {
 Bar Plots for categorical columns
 
 ```{r, bar-plots, echo = FALSE}
-non_numeric_cols <- setdiff(names(wildfires_df), c(numeric_cols, "fire_id"))
+non_numeric_cols <- setdiff(names(wildfires_df), c(numeric_cols, "fire_id", "DECADES", "OBJECTIVE", "STATE", "INC_NUM", "FIRE_NAME"))
 
 for (col in non_numeric_cols) {
   # Plot the histogram using barplot for categorical data
   barplot(table(wildfires_df[[col]]), main = paste("Histogram of", col), ylab = "Frequency")
 }
-```
-
-```{r}
-# purpleair_data %>% select(time_stamp, sensor_index) %>% head()
-# wildfires_purpleair %>% head()
-```
-
-```{r}
-# fire_ids <- wildfires_purpleair %>% pull(fire_id) %>% unique()
-# wildfires_df <- wildfires_df %>% filter(fire_id %in% fire_ids)
-# fire_sf <- fire_sf %>% filter(fire_id %in% fire_ids)
 ```
 
 ```{r}
@@ -208,6 +200,11 @@ ggplot(wildfires_df, aes(x = duration, y = GIS_ACRES)) +
   # scale_y_continuous(labels = scales::comma) +  # Add comma formatting to y-axis labels
   theme_minimal()
 ```
+
+-----------
+# END PLOTS
+-----------
+
 ```{r}
 # get distinct fire dates and sensor indexs
 purpleair_dates <- purpleair_data %>%
@@ -231,22 +228,19 @@ wildfires_purpleair_df <- wildfires_purpleair_df %>%
   filter(fire_distance <= fire_distance_threshold) %>% select(-fire_distance_threshold)
 ```
 
-
 ```{r}
-
-wildfires_dates_buffer <- wildfires_df %>% 
+wildfires_dates_seq <- wildfires_df %>% 
   mutate(ALARM_DATE = ymd(ALARM_DATE), CONT_DATE = ymd(CONT_DATE)) %>% 
   select(fire_id, ALARM_DATE, CONT_DATE, GIS_ACRES) %>%
   rowwise() %>% 
-  mutate(fire_dates = list(full_seq(c(ALARM_DATE, CONT_DATE + 5), 1)),
-         fire_day = list(seq_along(full_seq(c(ALARM_DATE, CONT_DATE + 5), 1))),
-         after_containment = list(full_seq(c(ALARM_DATE, CONT_DATE + 5), 1) > CONT_DATE)
+  mutate(fire_dates = list(full_seq(c(ALARM_DATE, CONT_DATE), 1)),
+         fire_day = list(seq_along(full_seq(c(ALARM_DATE, CONT_DATE), 1)))
   ) %>%
-  unnest(cols = c(fire_dates, fire_day, after_containment)) %>%
-  select(fire_id, fire_dates, fire_day, after_containment)
+  unnest(cols = c(fire_dates, fire_day)) %>%
+  select(fire_id, fire_dates, fire_day)
 
-wildfires_purpleair_df <- wildfires_purpleair_df %>% left_join(wildfires_dates_buffer, by = c("fire_id"))
-head(wildfires_dates_buffer)
+wildfires_purpleair_df <- wildfires_purpleair_df %>% left_join(wildfires_dates_seq, by = c("fire_id"))
+head(wildfires_dates_seq)
 ```
 
 ```{r}
@@ -254,14 +248,39 @@ head(wildfires_purpleair_df)
 ```
 
 ```{r}
-head(purpleair_dates)
-
-wildfires_purpleair_df
-
-purpleair_dates2 <- purpleair_dates %>% 
+pafires <- purpleair_dates %>% 
   left_join(wildfires_purpleair_df, by = c("sensor_index" = "sensor_index", "pa_date" = "fire_dates"))
 
+head(pafires %>% filter(!is.na(fire_id)))
+```
 
+```{}
+weather_pa <- read.csv(file.path("data", "processed", "weatherstations_purpleair.csv"))
+weather_data <- read.csv(file.path("data", "raw", "weather.csv"))
+wind <- weather_pa %>% left_join(weather_data, by = "station") %>% select(sensor_index, timestamp, wind_direction, wind_speed)
+wind
+```
+
+Closest fire: distance, direction, size, days since start
+```{r}
+pafire <- pafires %>%
+  group_by(sensor_index, pa_date) %>%
+  mutate(
+    f_dist = ifelse(all(is.na(fire_distance)), 999999, min(fire_distance, na.rm = TRUE)),
+    f_dir = ifelse(all(is.na(fire_distance)), -1, fire_direction[which.min(fire_distance)]),
+    f_size = ifelse(all(is.na(fire_distance)), -1, GIS_ACRES[which.min(fire_distance)]),
+    f_day = ifelse(all(is.na(fire_distance)), -9999, fire_day[which.min(fire_distance)]),
+    fire_id = ifelse(all(is.na(fire_distance)), -9999, fire_id[which.min(fire_distance)])
+  ) %>%
+  select(-fire_distance, -fire_direction, -GIS_ACRES, -fire_day) %>%
+  ungroup() %>% distinct()
+
+write.csv(pafire, 
+          file.path("data", "processed", "wildfires_purpleair_dates.csv"), 
+          row.names = FALSE)
+```
+
+```{}
 # # check days with multiple fires for same sensor
 # purpleair_dates2 %>% 
 #   filter(!is.na(fire_id)) %>%
@@ -288,6 +307,10 @@ write.csv(purpleair_dates2,
           row.names = FALSE)
 ```
 
+```{r}
+combined_data[, after_containment := as.integer(after_containment)]
+
+```
 
 ```{r}
 # # Join PurpleAir dates with fire dates using a rolling join
@@ -381,3 +404,4 @@ fire_impact <- purpleair_fires_df %>%
   slice_max(impact_score)  # Keep fire with highest impact score for each sensor and date
 
 ```
+

@@ -1,0 +1,154 @@
+---
+title: "OpenStreetMap Data"
+output: github_document
+knit: (function(input, ...) {rmarkdown::render(input, output_dir = "../docs", )})
+---
+
+```{r, setup, include=FALSE}
+knitr::opts_chunk$set(fig.path = "../docs/plots/")
+```
+
+Load required libraries
+
+```{r, load-libraries, message = FALSE, warning = FALSE}
+library(osmdata)       # Download OpenStreetMap Data
+library(dplyr)         # Data manipulation
+library(data.table)    # Working with large files
+library(sf)            # Spatial data manipulation
+library(leaflet)       # Interactive maps
+library(tigris)        # Counties map data
+library(ggplot2)       # Data visualization
+library(htmlwidgets)   # Creating HTML widgets
+library(webshot)       # Convert URL to image
+library(DataOverviewR)
+library(tidyverse)
+# library(terra)
+# library(tidyterra)
+# library(tibble)
+library(here)          # Robust file paths
+```
+
+```{r, read-sensors-csv, echo = FALSE}
+# Read sensors data
+pa_sensors <- read.csv(here("code", "data", "raw", "pa_sensors.csv"))
+pa_sf <- st_as_sf(pa_sensors, coords=c("longitude", "latitude"), crs = 4326)
+purpleairs_buffers <- st_read(here("code", "data", "raw", "purpleairs_buffers.gpkg"), quiet = TRUE)
+
+```
+
+Download OSM Roads
+
+```{r, download-roads, warning=FALSE}
+filepath <- here("code", "data", "raw", "bayarea_osm_roads.gpkg")
+
+if (!file.exists(filepath)) {
+  # Download OSM roads data for each sensor buffer
+  for (i in 1:nrow(purpleairs_buffers)) {
+    sensor_index <- purpleairs_buffers$sensor_index[i]
+    filename <- here("code", "data", "raw", "OSM", paste0("roads_sensor", sensor_index, ".gpkg"))
+    
+    if (file.exists(filename)) next
+    
+    osm <- opq(bbox = purpleairs_buffers[i, ]$geom) %>%
+      add_osm_feature(key = 'highway') %>%
+      osmdata_sf()
+    
+    if (is.null(osm$osm_lines) || nrow(osm$osm_lines) == 0) next
+    
+    # If OSM id is missing, fill with row names
+    if(!"osm_id" %in% names(osm$osm_lines)) {
+      osm$osm_lines$osm_id <- rownames(osm$osm_lines)
+    }
+    
+    # If other column is missing, fill with NA
+    cols <- c("name", "highway", "lanes", "maxspeed")
+    for (c in cols) {
+      if(!c %in% names(osm$osm_lines)) {
+        osm$osm_lines[[c]] <- NA
+      }
+    }
+    
+    selected_columns <- osm$osm_lines %>%
+      select(osm_id, name, highway, lanes, maxspeed)
+    
+    # Intersect with buffer
+    sf_obj <- st_intersection(st_as_sf(selected_columns), purpleairs_buffers[i, ]$geom)
+    
+    if (is.null(sf_obj) || nrow(sf_obj) == 0) next
+    
+    sf_obj$sensor_index <- purpleairs_buffers$sensor_index[i]
+    st_write(sf_obj, filename, driver = "GPKG", append = FALSE, quiet = TRUE)
+  }
+  
+  # Save OSM road data for sensors into a single file
+  file_paths <- list.files(here("code", "data", "raw", "OSM"),
+                           pattern = "^roads_sensor.*\\.gpkg$", full.names = TRUE)
+  sf_list <- lapply(file_paths, st_read, quiet = TRUE)
+  merged_sf <- do.call(rbind, sf_list) %>% distinct()
+  st_write(merged_sf, filepath, driver = "GPKG", append = FALSE, quiet = TRUE)
+}
+```
+
+```{r, read-roads, echo = FALSE}
+osm_roads <- st_read(here("code", "data", "raw", "bayarea_osm_roads.gpkg"), quiet = TRUE)
+```
+
+```{r, osm-roads-dictionary}
+desc <- data_description(osm_roads, 
+                         var_desc = c(
+                           "osm_id" = "Unique OpenStreetMap identifier for road segment",
+                           "name" = "Street name or route designation",
+                           "highway" = "Road classification (motorway, primary, residential, etc.)",
+                           "lanes" = "Number of traffic lanes",
+                           "maxspeed" = "Posted speed limit in km/h",
+                           "sensor_index" = "Unique identifier for PurpleAir sensors",
+                           "geometry" = "Road linestring segment geometry"
+                         ))
+
+data_dictionary(osm_roads, 
+                data_title = "OSM Roads", 
+                descriptions = desc, 
+                hide = c("top_n", "NA_Percentage", "NA_Count", "n_unique"))
+
+# Head osm roads
+knitr::kable(head(osm_roads, 3), row.names = FALSE, format = "markdown")
+```
+
+```{r, data-dict-osmroads}
+data_dictionary(osm_roads, data_title = "OSM Roads")
+```
+
+Road types: Major, Moderate, Minor
+
+```{r, road-types}
+osm_roads <- st_read(here("code", "data", "raw", "bayarea_osm_roads.gpkg"), quiet = TRUE)
+osm_roads_data <- osm_roads %>%
+  select(sensor_index, osm_id, highway) %>% 
+  mutate(road_type = case_when(
+    highway %in% c("motorway", "motorway_link", "trunk", "trunk_link") ~ "major",
+    highway %in% c("primary", "primary_link", "secondary", "tertiary") ~ "moderate",
+    highway %in% c("residential", "unclassified", "service", "living_street",
+                   "secondary_link", "tertiary_link") ~ "minor",
+    TRUE ~ "minor"))
+```
+
+Calculate road lengths per sensor
+
+```{r, road-lengths}
+road_lengths <- osm_roads_data %>%
+  select(sensor_index, osm_id, highway, road_type) %>%
+  mutate(road_length_m = round(st_length(geom),2)) %>% 
+  st_drop_geometry()
+
+# Remove units from road_length
+attributes(road_lengths$road_length_m) = NULL
+
+knitr::kable(head(road_lengths, 3), row.names = FALSE, format = "markdown")
+```
+
+Save OSM roads as CSV
+
+```{r, save-file}
+write.csv(road_lengths, here("code", "data", "processed", "osm_roads.csv"), row.names = FALSE)
+```
+

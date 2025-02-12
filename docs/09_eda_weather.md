@@ -1,4 +1,4 @@
-Exploratory Data Analysis: Weather Data
+Exploratory Data Analysis: Weather
 ================
 
 ------------------------------------------------------------------------
