@@ -19,3 +19,5 @@ Preprocessing/pasensors_weatherstations3dp.gpkg
 /code/inputs
 README copy.md
 *.html
+/code/exclude
+/docs/exclude
